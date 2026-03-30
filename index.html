@@ -305,7 +305,6 @@
         <span class="flag" id="flagC">C</span>
         <span class="flag" id="flagZ">Z</span>
         <span class="flag" id="flagN">N</span>
-        <span class="flag" id="flagH">HLT</span>
       </div>
     </div>
 
@@ -474,9 +473,12 @@ class LWCPU4 {
     const r2 = lo & 3;         // bits [1:0]
 
     switch (hi) {
-      case 0x0: // nop / hlt / rst
-        if (byte0 === 0x01) this.halted = true;
-        else if (byte0 === 0x02) { this.reset(); this.clearMemory(); }
+      case 0x0: // nop / spc reg
+        if (r1 !== 0) {
+          // spc reg: store current PC into register
+          this.setReg(r1, this.pc);
+        }
+        // r1 === 0: nop (0x00)
         break;
 
       case 0x1: { // jmp / jif
@@ -563,15 +565,13 @@ class LWCPU4 {
       b = this.getReg(r2);
       destReg = r1;
     } else if (r1 !== 0) {
-      // reg, imm16 (big-endian)
+      // reg, imm8
       a = this.getReg(r1);
-      b = (this.fetch() << 8) | this.fetch();
-      b &= 0xFF;  // truncate to 8-bit
+      b = this.fetch();
       destReg = r1;
     } else {
-      // imm16, reg
-      a = (this.fetch() << 8) | this.fetch();
-      a &= 0xFF;
+      // imm8, reg
+      a = this.fetch();
       b = this.getReg(r2);
       destReg = r2;
     }
@@ -603,24 +603,19 @@ class LWCPU4 {
     if (r1 === 0) return;
     let val = this.getReg(r1);
     let carryOut = 0;
-    const oldCarry = (this.st & 1) ? 1 : 0;
 
     switch (mode) {
-      case 0: // shl
-        carryOut = (val & 0x80) ? 1 : 0;
-        val = (val << 1) & 0xFF;
-        break;
-      case 1: // shr
+      case 0: // shr (logical shift right)
         carryOut = val & 1;
         val = (val >> 1) & 0x7F;
         break;
-      case 2: // rol
-        carryOut = (val & 0x80) ? 1 : 0;
-        val = ((val << 1) | carryOut) & 0xFF;
-        break;
-      case 3: // ror
+      case 1: // ror (rotate right)
         carryOut = val & 1;
         val = ((val >> 1) | (carryOut << 7)) & 0xFF;
+        break;
+      case 2: // asr (arithmetic shift right, preserves sign)
+        carryOut = val & 1;
+        val = ((val >> 1) | (val & 0x80)) & 0xFF;
         break;
     }
 
@@ -644,7 +639,7 @@ const ALU_NAMES = {
   0x7: 'add', 0x8: 'adc', 0x9: 'sub', 0xA: 'sbc',
   0xB: 'cmp', 0xC: 'and', 0xD: 'or',  0xE: 'xor'
 };
-const SHIFT_NAMES = { 0: 'shl', 1: 'shr', 2: 'rol', 3: 'ror' };
+const SHIFT_NAMES = { 0: 'shr', 1: 'ror', 2: 'asr' };
 
 function disassemble(mem, addr) {
   let pc = addr & 0xFF;
@@ -659,10 +654,8 @@ function disassemble(mem, addr) {
 
   switch (hi) {
     case 0x0:
-      if (byte0 === 0x00) mnemonic = 'nop';
-      else if (byte0 === 0x01) mnemonic = 'hlt';
-      else if (byte0 === 0x02) mnemonic = 'rst';
-      else mnemonic = '???';
+      if (r1 === 0) { mnemonic = 'nop'; }
+      else { mnemonic = 'spc'; operands = REG_NAMES[r1]; }
       break;
     case 0x1: {
       const isJif = (r2 & 1) === 1;
@@ -701,11 +694,9 @@ function disassemble(mem, addr) {
       if (r1 !== 0 && r2 !== 0) {
         operands = REG_NAMES[r1] + ', ' + REG_NAMES[r2];
       } else if (r1 !== 0) {
-        const imm = (rd() << 8) | rd();
-        operands = REG_NAMES[r1] + ', 0x' + hex4(imm);
+        operands = REG_NAMES[r1] + ', 0x' + hex2(rd());
       } else {
-        const imm = (rd() << 8) | rd();
-        operands = '0x' + hex4(imm) + ', ' + REG_NAMES[r2];
+        operands = '0x' + hex2(rd()) + ', ' + REG_NAMES[r2];
       }
       break;
     case 0xF:
@@ -889,164 +880,79 @@ function setStatus(msg, cls) {
   el.className = 'status ' + (cls || '');
 }
 
-// Example programs (pre-assembled)
+// Example programs (pre-assembled with i8 ALU immediates)
 const EXAMPLES = {
   hello: {
     name: 'Hello World',
-    // Assembled from hello.asm:
-    // mov b, message(0x11) => 0x38 0x11
-    // mov ds, 0            => 0x61 0x00
-    // mov a, [b]           => 0x46
-    // scd z                => 0x22
-    // jif .end(0x0f)       => 0x11 0x0f
-    // mov ds, 5            => 0x61 0x05
-    // mov [0], a           => 0x54 0x00
-    // add b, 1             => 0x78 0x00 0x01
-    // jmp print(0x02)      => 0x10 0x02
-    // .end: jmp init(0x00) => 0x10 0x00
-    // message: "Hello, world!\n\0"
+    // addr 0x00: mov b, 0x10      => 0x38 0x10
+    // addr 0x02: mov ds, 0        => 0x61 0x00  (print:)
+    // addr 0x04: mov a, [b]       => 0x46
+    // addr 0x05: scd z            => 0x22
+    // addr 0x06: jif $0E (.end)   => 0x11 0x0E
+    // addr 0x08: mov ds, 5        => 0x61 0x05
+    // addr 0x0A: mov [0], a       => 0x54 0x00
+    // addr 0x0C: add b, 1         => 0x78 0x01
+    // addr 0x0E: jmp $02 (print)  => 0x10 0x02  -- wait, .end is here
+    // Need .end AFTER the jmp:
+    // addr 0x0E: jmp $02 (print)  => 0x10 0x02
+    // addr 0x10: jmp $00 (init)   => 0x10 0x00  (.end = 0x10)
+    // addr 0x12: message data
+    // So jif .end = 0x11 0x10, mov b = 0x38 0x12
     bytes: [
-      0x38, 0x11,       // mov b, 0x11 (message addr)
-      0x61, 0x00,       // mov ds, 0
-      0x46,             // mov a, [b]
-      0x22,             // scd z
-      0x11, 0x0F,       // jif $0F (.end)
-      0x61, 0x05,       // mov ds, 5
-      0x54, 0x00,       // mov [0], a
-      0x78, 0x00, 0x01, // add b, 1
-      0x10, 0x02,       // jmp $02 (print)
-      0x10, 0x00,       // jmp $00 (init) - .end
-      // "Hello, world!\n\0"
+      0x38, 0x12,       // 00: mov b, 0x12 (message addr)
+      0x61, 0x00,       // 02: mov ds, 0   (print:)
+      0x46,             // 04: mov a, [b]
+      0x22,             // 05: scd z
+      0x11, 0x10,       // 06: jif $10 (.end)
+      0x61, 0x05,       // 08: mov ds, 5
+      0x54, 0x00,       // 0A: mov [0], a
+      0x78, 0x01,       // 0C: add b, 1
+      0x10, 0x02,       // 0E: jmp $02 (print)
+      0x10, 0x00,       // 10: jmp $00 (init)   (.end)
+      // 12: message "Hello, world!\n\0"
       0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20,
       0x77, 0x6F, 0x72, 0x6C, 0x64, 0x21, 0x0A, 0x00
     ]
   },
   counter: {
     name: 'ASCII Counter',
-    // Assembled from test1.asm:
-    // mov a, 0x20       => 0x34 0x20
-    // mov ds, 5         => 0x61 0x05
-    // scd nc            => 0x29
-    // .loop:
-    // mov [0], a        => 0x54 0x00
-    // add a, 1          => 0x74 0x00 0x01
-    // cmp a, 0x7f       => 0xB4 0x00 0x7F
-    // jif .loop(0x05)   => 0x11 0x05
-    // jmp init(0x00)    => 0x10 0x00
+    // addr 0x00: mov a, 0x20      => 0x34 0x20
+    // addr 0x02: mov ds, 5        => 0x61 0x05
+    // addr 0x04: scd nc           => 0x29
+    // addr 0x05: mov [0], a       => 0x54 0x00  (.loop)
+    // addr 0x07: add a, 1         => 0x74 0x01
+    // addr 0x09: cmp a, 0x7F      => 0xB4 0x7F
+    // addr 0x0B: jif $05 (.loop)  => 0x11 0x05
+    // addr 0x0D: jmp $00 (init)   => 0x10 0x00
     bytes: [
-      0x34, 0x20,       // mov a, 0x20
-      0x61, 0x05,       // mov ds, 5
-      0x29,             // scd nc
-      0x54, 0x00,       // mov [0], a  (.loop)
-      0x74, 0x00, 0x01, // add a, 1
-      0xB4, 0x00, 0x7F, // cmp a, 0x7F
-      0x11, 0x05,       // jif $05 (.loop)
-      0x10, 0x00        // jmp $00 (init)
+      0x34, 0x20,       // 00: mov a, 0x20
+      0x61, 0x05,       // 02: mov ds, 5
+      0x29,             // 04: scd nc
+      0x54, 0x00,       // 05: mov [0], a  (.loop)
+      0x74, 0x01,       // 07: add a, 1
+      0xB4, 0x7F,       // 09: cmp a, 0x7F
+      0x11, 0x05,       // 0B: jif $05 (.loop)
+      0x10, 0x00        // 0D: jmp $00 (init)
     ]
   },
   tty: {
     name: 'TTY Echo',
-    // Assembled from tty.asm:
-    // mov ds, 5         => 0x61 0x05
-    // scd n             => 0x24
-    // .loop:
-    // mov a, [0]        => 0x44 0x00
-    // jif .loop(0x04)   => 0x11 0x04
-    // mov [0], a        => 0x54 0x00
-    // jmp .loop(0x04)   => 0x10 0x04
+    // addr 0x00: mov ds, 5        => 0x61 0x05
+    // addr 0x02: scd n            => 0x24
+    // addr 0x03: mov a, [0]       => 0x44 0x00  (.loop)
+    // addr 0x05: jif $03 (.loop)  => 0x11 0x03
+    // addr 0x07: mov [0], a       => 0x54 0x00
+    // addr 0x09: jmp $03 (.loop)  => 0x10 0x03
     bytes: [
-      0x61, 0x05,       // mov ds, 5
-      0x24,             // scd n
-      0x44, 0x00,       // mov a, [0]  (.loop @ 0x04)
-      0x11, 0x04,       // jif $04 (.loop)
-      0x54, 0x00,       // mov [0], a
-      0x10, 0x04        // jmp $04 (.loop)
+      0x61, 0x05,       // 00: mov ds, 5
+      0x24,             // 02: scd n
+      0x44, 0x00,       // 03: mov a, [0]  (.loop)
+      0x11, 0x03,       // 05: jif $03 (.loop)
+      0x54, 0x00,       // 07: mov [0], a
+      0x10, 0x03        // 09: jmp $03 (.loop)
     ]
   }
 };
-
-// Wait -- the tty example: 'scd n' at addr 0x02, then .loop starts at 0x04.
-// But jif .loop should be 0x11 0x04. Let me recheck:
-// addr 0x00: 0x61 (mov ds,...)
-// addr 0x01: 0x05
-// addr 0x02: 0x24 (scd n)
-// addr 0x03: 0x44 (mov a, [...]) -- .loop is here at 0x03
-// addr 0x04: 0x00
-// addr 0x05: 0x11 (jif ...)
-// addr 0x06: 0x03 (.loop)
-// addr 0x07: 0x54 (mov [...], a)
-// addr 0x08: 0x00
-// addr 0x09: 0x10 (jmp ...)
-// addr 0x0A: 0x03 (.loop)
-// Fix the tty example:
-EXAMPLES.tty.bytes = [
-  0x61, 0x05,       // 00: mov ds, 5
-  0x24,             // 02: scd n
-  0x44, 0x00,       // 03: mov a, [0]  (.loop)
-  0x11, 0x03,       // 05: jif $03 (.loop)
-  0x54, 0x00,       // 07: mov [0], a
-  0x10, 0x03        // 09: jmp $03 (.loop)
-];
-
-// Also fix counter .loop address:
-// addr 0x00: 0x34 0x20      mov a, 0x20
-// addr 0x02: 0x61 0x05      mov ds, 5
-// addr 0x04: 0x29           scd nc
-// addr 0x05: 0x54 0x00      mov [0], a    (.loop)
-// addr 0x07: 0x74 0x00 0x01 add a, 1
-// addr 0x0A: 0xB4 0x00 0x7F cmp a, 0x7F
-// addr 0x0D: 0x11 0x05      jif $05 (.loop)
-// addr 0x0F: 0x10 0x00      jmp $00 (init)
-EXAMPLES.counter.bytes = [
-  0x34, 0x20,
-  0x61, 0x05,
-  0x29,
-  0x54, 0x00,
-  0x74, 0x00, 0x01,
-  0xB4, 0x00, 0x7F,
-  0x11, 0x05,
-  0x10, 0x00
-];
-
-// Fix hello addresses:
-// addr 0x00: 0x38 0x11      mov b, 0x11 (message)
-// addr 0x02: 0x61 0x00      mov ds, 0   (print:)
-// addr 0x04: 0x46           mov a, [b]
-// addr 0x05: 0x22           scd z
-// addr 0x06: 0x11 0x0F      jif $0F (.end)
-// addr 0x08: 0x61 0x05      mov ds, 5
-// addr 0x0A: 0x54 0x00      mov [0], a
-// addr 0x0C: 0x78 0x00 0x01 add b, 1
-// addr 0x0F: 0x10 0x02      jmp $02 (print)   <-- .end is here? No...
-// Wait, .end should be after the jmp print. Let me re-layout:
-// addr 0x00: 0x38 0x11      mov b, 0x11
-// addr 0x02: 0x61 0x00      mov ds, 0     (print:)
-// addr 0x04: 0x46           mov a, [b]
-// addr 0x05: 0x22           scd z
-// addr 0x06: 0x11 ??        jif .end
-// addr 0x08: 0x61 0x05      mov ds, 5
-// addr 0x0A: 0x54 0x00      mov [0], a
-// addr 0x0C: 0x78 0x00 0x01 add b, 1
-// addr 0x0F: 0x10 0x02      jmp $02 (print)
-// addr 0x11: 0x10 0x00      jmp $00 (init)   (.end = 0x11)
-// addr 0x13: message data
-// So jif .end = 0x11 0x11, and mov b, message = 0x38 0x13
-
-EXAMPLES.hello.bytes = [
-  0x38, 0x13,       // 00: mov b, 0x13 (message addr)
-  0x61, 0x00,       // 02: mov ds, 0   (print:)
-  0x46,             // 04: mov a, [b]
-  0x22,             // 05: scd z
-  0x11, 0x11,       // 06: jif $11 (.end)
-  0x61, 0x05,       // 08: mov ds, 5
-  0x54, 0x00,       // 0A: mov [0], a
-  0x78, 0x00, 0x01, // 0C: add b, 1
-  0x10, 0x02,       // 0F: jmp $02 (print)
-  0x10, 0x00,       // 11: jmp $00 (init)   (.end)
-  // 13: message "Hello, world!\n\0"
-  0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20,
-  0x77, 0x6F, 0x72, 0x6C, 0x64, 0x21, 0x0A, 0x00
-];
 
 $('exHello').onclick = () => loadExample('hello');
 $('exCounter').onclick = () => loadExample('counter');
@@ -1082,7 +988,6 @@ function updateUI() {
   $('flagC').className = 'flag' + ((cpu.st & 1) ? ' set' : '');
   $('flagZ').className = 'flag' + ((cpu.st & 2) ? ' set' : '');
   $('flagN').className = 'flag' + ((cpu.st & 4) ? ' set' : '');
-  $('flagH').className = 'flag' + (cpu.halted ? ' set' : '');
 
   // Cycle count
   $('cycleCount').textContent = cpu.cycles.toLocaleString();

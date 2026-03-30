@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LWCPU4 Emulator</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --surface: #282840;
+    --border: #3e3e5e;
+    --text: #cdd6f4;
+    --dim: #6c7086;
+    --accent: #89b4fa;
+    --green: #a6e3a1;
+    --red: #f38ba8;
+    --yellow: #f9e2af;
+    --peach: #fab387;
+    --pink: #f5c2e7;
+    --mono: 'Consolas', 'Courier New', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 16px;
+  }
+  h1 { font-size: 18px; color: var(--accent); margin-bottom: 12px; }
+  h2 { font-size: 13px; color: var(--accent); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 260px 1fr 320px;
+    grid-template-rows: auto 1fr;
+    gap: 12px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+  }
+
+  /* Controls */
+  .controls { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .controls button {
+    background: var(--border);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .controls button:hover { background: var(--accent); color: var(--bg); }
+  .controls button.active { background: var(--green); color: var(--bg); }
+  .controls label { font-size: 11px; color: var(--dim); }
+  .controls input[type=range] { width: 80px; }
+  .speed-val { font-size: 11px; color: var(--yellow); min-width: 50px; }
+
+  /* Registers */
+  .reg-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+  .reg-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 6px;
+    background: var(--bg);
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  .reg-name { color: var(--peach); }
+  .reg-val { color: var(--green); }
+  .reg-item.full { grid-column: 1 / -1; }
+
+  .flags {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+    justify-content: center;
+  }
+  .flag {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    background: var(--bg);
+    color: var(--dim);
+  }
+  .flag.set { color: var(--yellow); font-weight: bold; }
+
+  /* Disassembly */
+  .disasm {
+    font-size: 11px;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .disasm-line {
+    padding: 2px 4px;
+    white-space: pre;
+    border-left: 2px solid transparent;
+  }
+  .disasm-line.current {
+    background: rgba(137, 180, 250, 0.15);
+    border-left-color: var(--accent);
+  }
+  .disasm-addr { color: var(--dim); }
+  .disasm-hex { color: var(--peach); }
+  .disasm-mne { color: var(--green); }
+  .disasm-ops { color: var(--text); }
+
+  /* Memory */
+  .mem-view {
+    font-size: 11px;
+    max-height: 340px;
+    overflow-y: auto;
+    line-height: 1.5;
+  }
+  .mem-addr { color: var(--dim); }
+  .mem-byte { color: var(--text); }
+  .mem-byte.highlight { color: var(--accent); font-weight: bold; }
+  .mem-ascii { color: var(--dim); margin-left: 8px; }
+  .mem-controls { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .mem-controls select, .mem-controls input {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  /* TTY */
+  .tty {
+    background: #000;
+    color: #0f0;
+    font-size: 13px;
+    padding: 8px;
+    min-height: 180px;
+    max-height: 300px;
+    overflow-y: auto;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.4;
+    cursor: text;
+  }
+  .tty-cursor {
+    display: inline;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Load */
+  .load-area textarea {
+    width: 100%;
+    height: 100px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    resize: vertical;
+  }
+  .load-area .btn-row { display: flex; gap: 6px; margin-top: 6px; }
+  .load-area button {
+    background: var(--border);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .load-area button:hover { background: var(--accent); color: var(--bg); }
+  .load-area input[type=file] { display: none; }
+
+  .status {
+    font-size: 11px;
+    color: var(--dim);
+    margin-top: 4px;
+  }
+  .status.error { color: var(--red); }
+  .status.ok { color: var(--green); }
+
+  .examples { margin-top: 8px; }
+  .examples button {
+    background: var(--bg);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-family: var(--mono);
+    cursor: pointer;
+    margin: 2px;
+  }
+  .examples button:hover { background: var(--border); }
+
+  /* Saved programs */
+  .saved-programs { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+  .saved-programs h3 { font-size: 11px; color: var(--accent); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+  .save-row { display: flex; gap: 4px; margin-bottom: 6px; }
+  .save-row input {
+    flex: 1;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 3px 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .save-row button {
+    background: var(--green);
+    color: var(--bg);
+    border: none;
+    border-radius: 3px;
+    padding: 3px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .save-row button:hover { opacity: 0.85; }
+  .saved-list { max-height: 120px; overflow-y: auto; }
+  .saved-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+  .saved-item:hover { background: var(--bg); }
+  .saved-item .name {
+    flex: 1;
+    cursor: pointer;
+    color: var(--accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .saved-item .name:hover { text-decoration: underline; }
+  .saved-item .size { color: var(--dim); font-size: 10px; margin-right: 4px; }
+  .saved-item .del {
+    background: none;
+    border: none;
+    color: var(--red);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 0 4px;
+    opacity: 0.6;
+  }
+  .saved-item .del:hover { opacity: 1; }
+  .saved-empty { font-size: 10px; color: var(--dim); font-style: italic; }
+</style>
+</head>
+<body>
+
+<h1>LWCPU4 Emulator</h1>
+
+<div class="layout">
+  <!-- Controls -->
+  <div class="controls panel">
+    <button id="btnStep" title="Execute one instruction">Step</button>
+    <button id="btnRun" title="Run continuously">Run</button>
+    <button id="btnPause" title="Pause execution">Pause</button>
+    <button id="btnReset" title="Reset CPU">Reset</button>
+    <label>Speed:</label>
+    <input type="range" id="speedSlider" min="0" max="6" value="3">
+    <span class="speed-val" id="speedLabel">100 Hz</span>
+    <span style="margin-left:auto; font-size:11px; color:var(--dim)">
+      Cycles: <span id="cycleCount" style="color:var(--yellow)">0</span>
+    </span>
+  </div>
+
+  <!-- Left column: Registers + Disassembly -->
+  <div>
+    <div class="panel" style="margin-bottom:12px">
+      <h2>Registers</h2>
+      <div class="reg-grid">
+        <div class="reg-item"><span class="reg-name">A</span><span class="reg-val" id="regA">00</span></div>
+        <div class="reg-item"><span class="reg-name">B</span><span class="reg-val" id="regB">00</span></div>
+        <div class="reg-item"><span class="reg-name">ST</span><span class="reg-val" id="regST">00</span></div>
+        <div class="reg-item"><span class="reg-name">PC</span><span class="reg-val" id="regPC">00</span></div>
+        <div class="reg-item"><span class="reg-name">CS</span><span class="reg-val" id="regCS">00</span></div>
+        <div class="reg-item"><span class="reg-name">DS</span><span class="reg-val" id="regDS">00</span></div>
+        <div class="reg-item full"><span class="reg-name">Cond</span><span class="reg-val" id="regCond">--</span></div>
+      </div>
+      <div class="flags">
+        <span class="flag" id="flagC">C</span>
+        <span class="flag" id="flagZ">Z</span>
+        <span class="flag" id="flagN">N</span>
+        <span class="flag" id="flagH">HLT</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Disassembly</h2>
+      <div class="disasm" id="disasmView"></div>
+    </div>
+  </div>
+
+  <!-- Center: Memory + Load -->
+  <div>
+    <div class="panel" style="margin-bottom:12px">
+      <h2>Memory</h2>
+      <div class="mem-controls">
+        <label style="font-size:11px;color:var(--dim)">Segment:</label>
+        <input type="number" id="memSeg" value="0" min="0" max="255" style="width:40px">
+        <button id="btnMemCS" style="font-size:10px;padding:2px 6px;background:var(--bg);color:var(--accent);border:1px solid var(--border);border-radius:3px;cursor:pointer">CS</button>
+        <button id="btnMemDS" style="font-size:10px;padding:2px 6px;background:var(--bg);color:var(--accent);border:1px solid var(--border);border-radius:3px;cursor:pointer">DS</button>
+      </div>
+      <div class="mem-view" id="memView"></div>
+    </div>
+
+    <div class="panel load-area">
+      <h2>Load Program</h2>
+      <textarea id="hexInput" placeholder="Paste hex bytes (e.g., 34 20 61 05 29 54 00 74 00 01 ...)&#10;Or drag and drop a binary file"></textarea>
+      <div class="btn-row">
+        <button id="btnLoadHex">Load Hex</button>
+        <button id="btnLoadFile" title="Load binary file">Load File</button>
+        <input type="file" id="fileInput" accept=".bin,.rom,.o,.out">
+      </div>
+      <div class="status" id="loadStatus"></div>
+      <div class="examples">
+        <span style="font-size:10px;color:var(--dim)">Examples:</span>
+        <button id="exHello">Hello World</button>
+        <button id="exCounter">ASCII Counter</button>
+        <button id="exTTY">TTY Echo</button>
+      </div>
+      <div class="saved-programs">
+        <h3>Saved Programs</h3>
+        <div class="save-row">
+          <input type="text" id="saveName" placeholder="Program name...">
+          <button id="btnSave">Save</button>
+        </div>
+        <div class="saved-list" id="savedList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right column: TTY -->
+  <div class="panel">
+    <h2>TTY Terminal <span style="font-size:10px;color:var(--dim)">(segment 5, addr 0)</span></h2>
+    <div class="tty" id="ttyOutput" tabindex="0"><span class="tty-cursor">&#x2588;</span></div>
+    <div style="margin-top:6px;font-size:10px;color:var(--dim)">Click terminal and type to send input. Read returns 0xFF (negative) when buffer is empty.</div>
+    <button id="btnClearTTY" style="margin-top:6px;background:var(--bg);color:var(--dim);border:1px solid var(--border);border-radius:3px;padding:2px 8px;font-size:10px;cursor:pointer;font-family:var(--mono)">Clear Terminal</button>
+  </div>
+</div>
+
+<script>
+// ─── LWCPU4 CPU Core ───────────────────────────────────────────────
+
+class LWCPU4 {
+  constructor() {
+    this.memory = {};   // segment -> Uint8Array(256)
+    this.ttyInputBuffer = [];
+    this.ttyOutputCallback = null;
+    this.reset();
+  }
+
+  reset() {
+    this.a = 0;
+    this.b = 0;
+    this.st = 0;        // status / flags register
+    this.pc = 0;
+    this.cs = 0;
+    this.ds = 0;
+    this.condition = 0; // condition set by scd
+    this.halted = false;
+    this.cycles = 0;
+  }
+
+  getSegment(seg) {
+    if (!this.memory[seg]) this.memory[seg] = new Uint8Array(256);
+    return this.memory[seg];
+  }
+
+  clearMemory() {
+    this.memory = {};
+  }
+
+  readMem(seg, addr) {
+    addr &= 0xFF;
+    if (seg === 5 && addr === 0) {
+      // TTY read: return next char or 0xFF if empty
+      if (this.ttyInputBuffer.length > 0) {
+        return this.ttyInputBuffer.shift();
+      }
+      return 0xFF; // negative => no data
+    }
+    return this.getSegment(seg)[addr];
+  }
+
+  writeMem(seg, addr, val) {
+    addr &= 0xFF;
+    val &= 0xFF;
+    if (seg === 5 && addr === 0) {
+      if (this.ttyOutputCallback) this.ttyOutputCallback(val);
+      return;
+    }
+    this.getSegment(seg)[addr] = val;
+  }
+
+  loadProgram(data, segment = 0, offset = 0) {
+    const seg = this.getSegment(segment);
+    for (let i = 0; i < data.length && (offset + i) < 256; i++) {
+      seg[offset + i] = data[i] & 0xFF;
+    }
+  }
+
+  fetch() {
+    const val = this.getSegment(this.cs)[this.pc & 0xFF];
+    this.pc = (this.pc + 1) & 0xFF;
+    return val;
+  }
+
+  getReg(code) {
+    switch (code) {
+      case 1: return this.a;
+      case 2: return this.b;
+      case 3: return this.st;
+      default: return 0;
+    }
+  }
+
+  setReg(code, val) {
+    val &= 0xFF;
+    switch (code) {
+      case 1: this.a = val; break;
+      case 2: this.b = val; break;
+      case 3: this.st = val; break;
+    }
+  }
+
+  updateFlags(result, logical = false) {
+    this.st = 0;
+    if (!logical && (result & 0x100)) this.st |= 1;  // Carry
+    if ((result & 0xFF) === 0)       this.st |= 2;    // Zero
+    if (result & 0x80)               this.st |= 4;    // Negative
+  }
+
+  checkCondition() {
+    const c = this.condition;
+    const negate = (c & 0x8) !== 0;
+    const mask = c & 0x7;
+    let result = (this.st & mask) !== 0;
+    if (negate) result = !result;
+    return result;
+  }
+
+  step() {
+    if (this.halted) return false;
+
+    const byte0 = this.fetch();
+    const hi = (byte0 >> 4) & 0xF;
+    const lo = byte0 & 0xF;
+    const r1 = (lo >> 2) & 3;  // bits [3:2]
+    const r2 = lo & 3;         // bits [1:0]
+
+    switch (hi) {
+      case 0x0: // nop / hlt / rst
+        if (byte0 === 0x01) this.halted = true;
+        else if (byte0 === 0x02) { this.reset(); this.clearMemory(); }
+        break;
+
+      case 0x1: { // jmp / jif
+        const isJif = (r2 & 1) === 1;
+        if (r1 === 0) {
+          // Immediate address
+          const addr = this.fetch();
+          if (!isJif || this.checkCondition()) this.pc = addr;
+        } else {
+          // Register address
+          if (!isJif || this.checkCondition()) this.pc = this.getReg(r1);
+        }
+        break;
+      }
+
+      case 0x2: // scd - set condition
+        this.condition = lo;
+        break;
+
+      case 0x3: // mov reg, imm8 / mov reg, reg
+        if (r2 === 0 && r1 !== 0) {
+          // mov reg, imm8
+          this.setReg(r1, this.fetch());
+        } else if (r1 !== 0 && r2 !== 0) {
+          // mov reg, reg
+          this.setReg(r1, this.getReg(r2));
+        }
+        break;
+
+      case 0x4: { // mov reg, [addr] / mov reg, [reg]  (load)
+        let val;
+        if (r2 === 0) {
+          val = this.readMem(this.ds, this.fetch());
+        } else {
+          val = this.readMem(this.ds, this.getReg(r2));
+        }
+        this.setReg(r1, val);
+        // Loads set Z and N flags
+        this.updateFlags(val, true);
+        break;
+      }
+
+      case 0x5: // mov [addr], reg / mov [reg], reg  (store)
+        if (r2 === 0) {
+          this.writeMem(this.ds, this.fetch(), this.getReg(r1));
+        } else {
+          this.writeMem(this.ds, this.getReg(r2), this.getReg(r1));
+        }
+        break;
+
+      case 0x6: // mov segment, imm8 / mov segment, reg
+        if (r1 === 0) {
+          // mov seg, imm8 — r2 selects segment (0=cs, 1=ds)
+          const num = this.fetch();
+          if (r2 === 0) this.cs = num;
+          else if (r2 === 1) this.ds = num;
+        } else {
+          // mov seg, reg — r2 selects segment
+          if (r2 === 0) this.cs = this.getReg(r1);
+          else if (r2 === 1) this.ds = this.getReg(r1);
+        }
+        break;
+
+      case 0x7: case 0x8: case 0x9: case 0xA:
+      case 0xB: case 0xC: case 0xD: case 0xE:
+        this.execALU(hi, r1, r2);
+        break;
+
+      case 0xF: // shifts
+        this.execShift(r1, r2);
+        break;
+    }
+
+    this.cycles++;
+    return true;
+  }
+
+  execALU(op, r1, r2) {
+    let a, b, destReg;
+
+    if (r1 !== 0 && r2 !== 0) {
+      // reg, reg
+      a = this.getReg(r1);
+      b = this.getReg(r2);
+      destReg = r1;
+    } else if (r1 !== 0) {
+      // reg, imm16 (big-endian)
+      a = this.getReg(r1);
+      b = (this.fetch() << 8) | this.fetch();
+      b &= 0xFF;  // truncate to 8-bit
+      destReg = r1;
+    } else {
+      // imm16, reg
+      a = (this.fetch() << 8) | this.fetch();
+      a &= 0xFF;
+      b = this.getReg(r2);
+      destReg = r2;
+    }
+
+    const carry = (this.st & 1) ? 1 : 0;
+    let result;
+    let logical = false;
+
+    switch (op) {
+      case 0x7: result = a + b; break;                          // add
+      case 0x8: result = a + b + carry; break;                  // adc
+      case 0x9: result = a + (~b & 0xFF) + 1; break;           // sub
+      case 0xA: result = a + (~b & 0xFF) + carry; break;       // sbc
+      case 0xB: result = a + (~b & 0xFF) + 1; break;           // cmp
+      case 0xC: result = a & b; logical = true; break;         // and
+      case 0xD: result = a | b; logical = true; break;         // or
+      case 0xE: result = a ^ b; logical = true; break;         // xor
+    }
+
+    this.updateFlags(result, logical);
+
+    // cmp does not store result
+    if (op !== 0xB) {
+      this.setReg(destReg, result & 0xFF);
+    }
+  }
+
+  execShift(r1, mode) {
+    if (r1 === 0) return;
+    let val = this.getReg(r1);
+    let carryOut = 0;
+    const oldCarry = (this.st & 1) ? 1 : 0;
+
+    switch (mode) {
+      case 0: // shl
+        carryOut = (val & 0x80) ? 1 : 0;
+        val = (val << 1) & 0xFF;
+        break;
+      case 1: // shr
+        carryOut = val & 1;
+        val = (val >> 1) & 0x7F;
+        break;
+      case 2: // rol
+        carryOut = (val & 0x80) ? 1 : 0;
+        val = ((val << 1) | carryOut) & 0xFF;
+        break;
+      case 3: // ror
+        carryOut = val & 1;
+        val = ((val >> 1) | (carryOut << 7)) & 0xFF;
+        break;
+    }
+
+    this.setReg(r1, val);
+    this.st = 0;
+    if (carryOut) this.st |= 1;
+    if (val === 0)  this.st |= 2;
+    if (val & 0x80) this.st |= 4;
+  }
+}
+
+// ─── Disassembler ──────────────────────────────────────────────────
+
+const REG_NAMES = { 0: '?', 1: 'a', 2: 'b', 3: 'ST' };
+const COND_NAMES = {
+  0x1: 'C', 0x2: 'Z', 0x4: 'N',
+  0x9: 'NC', 0xA: 'NZ', 0xC: 'NN'
+};
+const SEG_NAMES = { 0: 'cs', 1: 'ds' };
+const ALU_NAMES = {
+  0x7: 'add', 0x8: 'adc', 0x9: 'sub', 0xA: 'sbc',
+  0xB: 'cmp', 0xC: 'and', 0xD: 'or',  0xE: 'xor'
+};
+const SHIFT_NAMES = { 0: 'shl', 1: 'shr', 2: 'rol', 3: 'ror' };
+
+function disassemble(mem, addr) {
+  let pc = addr & 0xFF;
+  const startPC = pc;
+  const rd = () => { const v = mem[pc & 0xFF]; pc = (pc+1) & 0xFF; return v; };
+  const byte0 = rd();
+  const hi = (byte0 >> 4) & 0xF;
+  const lo = byte0 & 0xF;
+  const r1 = (lo >> 2) & 3;
+  const r2 = lo & 3;
+  let mnemonic = '', operands = '';
+
+  switch (hi) {
+    case 0x0:
+      if (byte0 === 0x00) mnemonic = 'nop';
+      else if (byte0 === 0x01) mnemonic = 'hlt';
+      else if (byte0 === 0x02) mnemonic = 'rst';
+      else mnemonic = '???';
+      break;
+    case 0x1: {
+      const isJif = (r2 & 1) === 1;
+      mnemonic = isJif ? 'jif' : 'jmp';
+      if (r1 === 0) operands = '$' + hex2(rd());
+      else operands = REG_NAMES[r1];
+      break;
+    }
+    case 0x2:
+      mnemonic = 'scd';
+      operands = COND_NAMES[lo] || ('0x' + lo.toString(16));
+      break;
+    case 0x3:
+      mnemonic = 'mov';
+      if (r2 === 0 && r1 !== 0) operands = REG_NAMES[r1] + ', 0x' + hex2(rd());
+      else operands = REG_NAMES[r1] + ', ' + REG_NAMES[r2];
+      break;
+    case 0x4:
+      mnemonic = 'mov';
+      if (r2 === 0) operands = REG_NAMES[r1] + ', [0x' + hex2(rd()) + ']';
+      else operands = REG_NAMES[r1] + ', [' + REG_NAMES[r2] + ']';
+      break;
+    case 0x5:
+      mnemonic = 'mov';
+      if (r2 === 0) operands = '[0x' + hex2(rd()) + '], ' + REG_NAMES[r1];
+      else operands = '[' + REG_NAMES[r2] + '], ' + REG_NAMES[r1];
+      break;
+    case 0x6:
+      mnemonic = 'mov';
+      if (r1 === 0) operands = SEG_NAMES[r2] || '?', operands += ', 0x' + hex2(rd());
+      else operands = (SEG_NAMES[r2] || '?') + ', ' + REG_NAMES[r1];
+      break;
+    case 0x7: case 0x8: case 0x9: case 0xA:
+    case 0xB: case 0xC: case 0xD: case 0xE:
+      mnemonic = ALU_NAMES[hi];
+      if (r1 !== 0 && r2 !== 0) {
+        operands = REG_NAMES[r1] + ', ' + REG_NAMES[r2];
+      } else if (r1 !== 0) {
+        const imm = (rd() << 8) | rd();
+        operands = REG_NAMES[r1] + ', 0x' + hex4(imm);
+      } else {
+        const imm = (rd() << 8) | rd();
+        operands = '0x' + hex4(imm) + ', ' + REG_NAMES[r2];
+      }
+      break;
+    case 0xF:
+      mnemonic = SHIFT_NAMES[r2] || '???';
+      operands = REG_NAMES[r1];
+      break;
+    default:
+      mnemonic = '???';
+  }
+
+  const len = ((pc - startPC) + 256) % 256 || 1;
+  const bytes = [];
+  for (let i = 0; i < len; i++) bytes.push(mem[(startPC + i) & 0xFF]);
+  return { mnemonic, operands, bytes, length: len };
+}
+
+function hex2(v) { return (v & 0xFF).toString(16).padStart(2, '0'); }
+function hex4(v) { return (v & 0xFFFF).toString(16).padStart(4, '0'); }
+
+// ─── UI ────────────────────────────────────────────────────────────
+
+const cpu = new LWCPU4();
+let running = false;
+let runTimer = null;
+const SPEEDS = [1, 5, 20, 100, 500, 2000, 10000];
+const SPEED_LABELS = ['1 Hz','5 Hz','20 Hz','100 Hz','500 Hz','2 kHz','Max'];
+
+// DOM references
+const $ = id => document.getElementById(id);
+
+// TTY
+const ttyEl = $('ttyOutput');
+let ttyText = '';
+
+cpu.ttyOutputCallback = (charCode) => {
+  if (charCode === 10) ttyText += '\n';
+  else if (charCode >= 32 && charCode < 127) ttyText += String.fromCharCode(charCode);
+  else if (charCode === 8 && ttyText.length > 0) ttyText = ttyText.slice(0, -1); // backspace
+  else if (charCode === 13) { /* CR: ignore */ }
+  else ttyText += '·';
+  updateTTY();
+};
+
+function updateTTY() {
+  ttyEl.textContent = ttyText;
+  const cursor = document.createElement('span');
+  cursor.className = 'tty-cursor';
+  cursor.textContent = '\u2588';
+  ttyEl.appendChild(cursor);
+  ttyEl.scrollTop = ttyEl.scrollHeight;
+}
+
+ttyEl.addEventListener('keydown', (e) => {
+  if (e.key.length === 1) {
+    cpu.ttyInputBuffer.push(e.key.charCodeAt(0));
+  } else if (e.key === 'Enter') {
+    cpu.ttyInputBuffer.push(10);
+  } else if (e.key === 'Backspace') {
+    cpu.ttyInputBuffer.push(8);
+  }
+  e.preventDefault();
+});
+
+$('btnClearTTY').onclick = () => { ttyText = ''; updateTTY(); };
+
+// Controls
+$('btnStep').onclick = () => {
+  stopRun();
+  cpu.step();
+  updateUI();
+};
+
+$('btnRun').onclick = () => {
+  if (running) return;
+  running = true;
+  $('btnRun').classList.add('active');
+  scheduleRun();
+};
+
+$('btnPause').onclick = stopRun;
+
+$('btnReset').onclick = () => {
+  stopRun();
+  cpu.reset();
+  ttyText = '';
+  updateTTY();
+  updateUI();
+};
+
+function stopRun() {
+  running = false;
+  $('btnRun').classList.remove('active');
+  if (runTimer) { cancelAnimationFrame(runTimer); runTimer = null; }
+  updateUI();
+}
+
+function scheduleRun() {
+  if (!running) return;
+  const speed = SPEEDS[$('speedSlider').value];
+  if (speed >= 10000) {
+    // Max speed: run many per frame
+    runTimer = requestAnimationFrame(() => {
+      for (let i = 0; i < 5000 && !cpu.halted; i++) cpu.step();
+      updateUI();
+      if (cpu.halted) { stopRun(); return; }
+      scheduleRun();
+    });
+  } else {
+    // Timed: run batch per frame
+    const perFrame = Math.max(1, Math.ceil(speed / 60));
+    runTimer = requestAnimationFrame(() => {
+      for (let i = 0; i < perFrame && !cpu.halted; i++) cpu.step();
+      updateUI();
+      if (cpu.halted) { stopRun(); return; }
+      if (speed <= 5) {
+        setTimeout(() => scheduleRun(), 1000 / speed);
+      } else {
+        scheduleRun();
+      }
+    });
+  }
+}
+
+$('speedSlider').oninput = () => {
+  $('speedLabel').textContent = SPEED_LABELS[$('speedSlider').value];
+};
+
+// Memory view buttons
+$('btnMemCS').onclick = () => { $('memSeg').value = cpu.cs; updateMemView(); };
+$('btnMemDS').onclick = () => { $('memSeg').value = cpu.ds; updateMemView(); };
+$('memSeg').onchange = updateMemView;
+
+// Load program
+$('btnLoadHex').onclick = () => {
+  const text = $('hexInput').value.trim();
+  if (!text) return;
+  try {
+    const bytes = parseHex(text);
+    cpu.reset();
+    cpu.clearMemory();
+    cpu.loadProgram(bytes, 0, 0);
+    ttyText = '';
+    updateTTY();
+    updateUI();
+    setStatus('Loaded ' + bytes.length + ' bytes', 'ok');
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'error');
+  }
+};
+
+$('btnLoadFile').onclick = () => $('fileInput').click();
+$('fileInput').onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const bytes = new Uint8Array(reader.result);
+    cpu.reset();
+    cpu.clearMemory();
+    cpu.loadProgram(bytes, 0, 0);
+    ttyText = '';
+    updateTTY();
+    updateUI();
+    setStatus('Loaded ' + bytes.length + ' bytes from ' + file.name, 'ok');
+  };
+  reader.readAsArrayBuffer(file);
+};
+
+function parseHex(text) {
+  // Remove comments and clean up
+  text = text.replace(/\/\/.*$/gm, '').replace(/[;\#].*$/gm, '');
+  // Match hex bytes
+  const matches = text.match(/[0-9a-fA-F]{2}/g);
+  if (!matches || matches.length === 0) throw new Error('No hex bytes found');
+  return matches.map(h => parseInt(h, 16));
+}
+
+function setStatus(msg, cls) {
+  const el = $('loadStatus');
+  el.textContent = msg;
+  el.className = 'status ' + (cls || '');
+}
+
+// Example programs (pre-assembled)
+const EXAMPLES = {
+  hello: {
+    name: 'Hello World',
+    // Assembled from hello.asm:
+    // mov b, message(0x11) => 0x38 0x11
+    // mov ds, 0            => 0x61 0x00
+    // mov a, [b]           => 0x46
+    // scd z                => 0x22
+    // jif .end(0x0f)       => 0x11 0x0f
+    // mov ds, 5            => 0x61 0x05
+    // mov [0], a           => 0x54 0x00
+    // add b, 1             => 0x78 0x00 0x01
+    // jmp print(0x02)      => 0x10 0x02
+    // .end: jmp init(0x00) => 0x10 0x00
+    // message: "Hello, world!\n\0"
+    bytes: [
+      0x38, 0x11,       // mov b, 0x11 (message addr)
+      0x61, 0x00,       // mov ds, 0
+      0x46,             // mov a, [b]
+      0x22,             // scd z
+      0x11, 0x0F,       // jif $0F (.end)
+      0x61, 0x05,       // mov ds, 5
+      0x54, 0x00,       // mov [0], a
+      0x78, 0x00, 0x01, // add b, 1
+      0x10, 0x02,       // jmp $02 (print)
+      0x10, 0x00,       // jmp $00 (init) - .end
+      // "Hello, world!\n\0"
+      0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20,
+      0x77, 0x6F, 0x72, 0x6C, 0x64, 0x21, 0x0A, 0x00
+    ]
+  },
+  counter: {
+    name: 'ASCII Counter',
+    // Assembled from test1.asm:
+    // mov a, 0x20       => 0x34 0x20
+    // mov ds, 5         => 0x61 0x05
+    // scd nc            => 0x29
+    // .loop:
+    // mov [0], a        => 0x54 0x00
+    // add a, 1          => 0x74 0x00 0x01
+    // cmp a, 0x7f       => 0xB4 0x00 0x7F
+    // jif .loop(0x05)   => 0x11 0x05
+    // jmp init(0x00)    => 0x10 0x00
+    bytes: [
+      0x34, 0x20,       // mov a, 0x20
+      0x61, 0x05,       // mov ds, 5
+      0x29,             // scd nc
+      0x54, 0x00,       // mov [0], a  (.loop)
+      0x74, 0x00, 0x01, // add a, 1
+      0xB4, 0x00, 0x7F, // cmp a, 0x7F
+      0x11, 0x05,       // jif $05 (.loop)
+      0x10, 0x00        // jmp $00 (init)
+    ]
+  },
+  tty: {
+    name: 'TTY Echo',
+    // Assembled from tty.asm:
+    // mov ds, 5         => 0x61 0x05
+    // scd n             => 0x24
+    // .loop:
+    // mov a, [0]        => 0x44 0x00
+    // jif .loop(0x04)   => 0x11 0x04
+    // mov [0], a        => 0x54 0x00
+    // jmp .loop(0x04)   => 0x10 0x04
+    bytes: [
+      0x61, 0x05,       // mov ds, 5
+      0x24,             // scd n
+      0x44, 0x00,       // mov a, [0]  (.loop @ 0x04)
+      0x11, 0x04,       // jif $04 (.loop)
+      0x54, 0x00,       // mov [0], a
+      0x10, 0x04        // jmp $04 (.loop)
+    ]
+  }
+};
+
+// Wait -- the tty example: 'scd n' at addr 0x02, then .loop starts at 0x04.
+// But jif .loop should be 0x11 0x04. Let me recheck:
+// addr 0x00: 0x61 (mov ds,...)
+// addr 0x01: 0x05
+// addr 0x02: 0x24 (scd n)
+// addr 0x03: 0x44 (mov a, [...]) -- .loop is here at 0x03
+// addr 0x04: 0x00
+// addr 0x05: 0x11 (jif ...)
+// addr 0x06: 0x03 (.loop)
+// addr 0x07: 0x54 (mov [...], a)
+// addr 0x08: 0x00
+// addr 0x09: 0x10 (jmp ...)
+// addr 0x0A: 0x03 (.loop)
+// Fix the tty example:
+EXAMPLES.tty.bytes = [
+  0x61, 0x05,       // 00: mov ds, 5
+  0x24,             // 02: scd n
+  0x44, 0x00,       // 03: mov a, [0]  (.loop)
+  0x11, 0x03,       // 05: jif $03 (.loop)
+  0x54, 0x00,       // 07: mov [0], a
+  0x10, 0x03        // 09: jmp $03 (.loop)
+];
+
+// Also fix counter .loop address:
+// addr 0x00: 0x34 0x20      mov a, 0x20
+// addr 0x02: 0x61 0x05      mov ds, 5
+// addr 0x04: 0x29           scd nc
+// addr 0x05: 0x54 0x00      mov [0], a    (.loop)
+// addr 0x07: 0x74 0x00 0x01 add a, 1
+// addr 0x0A: 0xB4 0x00 0x7F cmp a, 0x7F
+// addr 0x0D: 0x11 0x05      jif $05 (.loop)
+// addr 0x0F: 0x10 0x00      jmp $00 (init)
+EXAMPLES.counter.bytes = [
+  0x34, 0x20,
+  0x61, 0x05,
+  0x29,
+  0x54, 0x00,
+  0x74, 0x00, 0x01,
+  0xB4, 0x00, 0x7F,
+  0x11, 0x05,
+  0x10, 0x00
+];
+
+// Fix hello addresses:
+// addr 0x00: 0x38 0x11      mov b, 0x11 (message)
+// addr 0x02: 0x61 0x00      mov ds, 0   (print:)
+// addr 0x04: 0x46           mov a, [b]
+// addr 0x05: 0x22           scd z
+// addr 0x06: 0x11 0x0F      jif $0F (.end)
+// addr 0x08: 0x61 0x05      mov ds, 5
+// addr 0x0A: 0x54 0x00      mov [0], a
+// addr 0x0C: 0x78 0x00 0x01 add b, 1
+// addr 0x0F: 0x10 0x02      jmp $02 (print)   <-- .end is here? No...
+// Wait, .end should be after the jmp print. Let me re-layout:
+// addr 0x00: 0x38 0x11      mov b, 0x11
+// addr 0x02: 0x61 0x00      mov ds, 0     (print:)
+// addr 0x04: 0x46           mov a, [b]
+// addr 0x05: 0x22           scd z
+// addr 0x06: 0x11 ??        jif .end
+// addr 0x08: 0x61 0x05      mov ds, 5
+// addr 0x0A: 0x54 0x00      mov [0], a
+// addr 0x0C: 0x78 0x00 0x01 add b, 1
+// addr 0x0F: 0x10 0x02      jmp $02 (print)
+// addr 0x11: 0x10 0x00      jmp $00 (init)   (.end = 0x11)
+// addr 0x13: message data
+// So jif .end = 0x11 0x11, and mov b, message = 0x38 0x13
+
+EXAMPLES.hello.bytes = [
+  0x38, 0x13,       // 00: mov b, 0x13 (message addr)
+  0x61, 0x00,       // 02: mov ds, 0   (print:)
+  0x46,             // 04: mov a, [b]
+  0x22,             // 05: scd z
+  0x11, 0x11,       // 06: jif $11 (.end)
+  0x61, 0x05,       // 08: mov ds, 5
+  0x54, 0x00,       // 0A: mov [0], a
+  0x78, 0x00, 0x01, // 0C: add b, 1
+  0x10, 0x02,       // 0F: jmp $02 (print)
+  0x10, 0x00,       // 11: jmp $00 (init)   (.end)
+  // 13: message "Hello, world!\n\0"
+  0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20,
+  0x77, 0x6F, 0x72, 0x6C, 0x64, 0x21, 0x0A, 0x00
+];
+
+$('exHello').onclick = () => loadExample('hello');
+$('exCounter').onclick = () => loadExample('counter');
+$('exTTY').onclick = () => loadExample('tty');
+
+function loadExample(name) {
+  const ex = EXAMPLES[name];
+  cpu.reset();
+  cpu.clearMemory();
+  cpu.loadProgram(ex.bytes, 0, 0);
+  ttyText = '';
+  updateTTY();
+  $('hexInput').value = ex.bytes.map(b => hex2(b)).join(' ');
+  setStatus('Loaded example: ' + ex.name, 'ok');
+  updateUI();
+}
+
+// ─── UI Update ─────────────────────────────────────────────────────
+
+function updateUI() {
+  // Registers
+  $('regA').textContent = hex2(cpu.a);
+  $('regB').textContent = hex2(cpu.b);
+  $('regST').textContent = hex2(cpu.st);
+  $('regPC').textContent = hex2(cpu.pc);
+  $('regCS').textContent = hex2(cpu.cs);
+  $('regDS').textContent = hex2(cpu.ds);
+
+  const condNames = COND_NAMES[cpu.condition];
+  $('regCond').textContent = condNames || (cpu.condition === 0 ? '--' : '0x' + cpu.condition.toString(16));
+
+  // Flags
+  $('flagC').className = 'flag' + ((cpu.st & 1) ? ' set' : '');
+  $('flagZ').className = 'flag' + ((cpu.st & 2) ? ' set' : '');
+  $('flagN').className = 'flag' + ((cpu.st & 4) ? ' set' : '');
+  $('flagH').className = 'flag' + (cpu.halted ? ' set' : '');
+
+  // Cycle count
+  $('cycleCount').textContent = cpu.cycles.toLocaleString();
+
+  // Disassembly
+  updateDisasm();
+
+  // Memory
+  updateMemView();
+}
+
+function updateDisasm() {
+  const el = $('disasmView');
+  const mem = cpu.getSegment(cpu.cs);
+  const lines = [];
+  let addr = 0;
+  const seen = new Set();
+
+  while (addr < 256 && !seen.has(addr)) {
+    seen.add(addr);
+    const info = disassemble(mem, addr);
+    const isCurrent = addr === cpu.pc;
+    const hexStr = info.bytes.map(b => hex2(b)).join(' ');
+
+    lines.push(
+      `<div class="disasm-line${isCurrent ? ' current' : ''}">` +
+      `<span class="disasm-addr">${hex2(addr)}: </span>` +
+      `<span class="disasm-hex">${hexStr.padEnd(11)}</span> ` +
+      `<span class="disasm-mne">${info.mnemonic.padEnd(4)}</span> ` +
+      `<span class="disasm-ops">${info.operands}</span></div>`
+    );
+
+    addr += info.length;
+    // Stop after a run of zeros (likely data/padding)
+    if (info.bytes.every(b => b === 0) && addr < 256 && mem[addr] === 0) {
+      // Check if rest is all zeros
+      let allZero = true;
+      for (let i = addr; i < Math.min(addr + 8, 256); i++) {
+        if (mem[i] !== 0) { allZero = false; break; }
+      }
+      if (allZero) break;
+    }
+  }
+
+  el.innerHTML = lines.join('');
+
+  // Scroll current line into view
+  const currentLine = el.querySelector('.current');
+  if (currentLine) currentLine.scrollIntoView({ block: 'nearest' });
+}
+
+function updateMemView() {
+  const seg = parseInt($('memSeg').value) || 0;
+  const mem = cpu.getSegment(seg);
+  const el = $('memView');
+  let html = '';
+
+  for (let row = 0; row < 256; row += 16) {
+    let hexPart = '';
+    let asciiPart = '';
+    for (let col = 0; col < 16; col++) {
+      const addr = row + col;
+      const val = mem[addr];
+      const isPC = (seg === cpu.cs && addr === cpu.pc);
+      hexPart += `<span class="mem-byte${isPC ? ' highlight' : ''}">${hex2(val)}</span> `;
+      asciiPart += (val >= 32 && val < 127) ? String.fromCharCode(val) : '.';
+    }
+    html += `<div><span class="mem-addr">${hex2(row)}:</span> ${hexPart}<span class="mem-ascii">${asciiPart}</span></div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+// Drag-and-drop support on hex input
+const hexArea = $('hexInput');
+hexArea.addEventListener('dragover', e => { e.preventDefault(); });
+hexArea.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const bytes = new Uint8Array(reader.result);
+    cpu.reset();
+    cpu.clearMemory();
+    cpu.loadProgram(bytes, 0, 0);
+    ttyText = '';
+    updateTTY();
+    hexArea.value = Array.from(bytes).map(b => hex2(b)).join(' ');
+    setStatus('Loaded ' + bytes.length + ' bytes from ' + file.name, 'ok');
+    updateUI();
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+// ─── Saved Programs (localStorage) ─────────────────────────────────
+
+const STORAGE_KEY = 'lwcpu4_saved_programs';
+
+function getSavedPrograms() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+  } catch { return {}; }
+}
+
+function setSavedPrograms(programs) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(programs));
+}
+
+function renderSavedList() {
+  const list = $('savedList');
+  const programs = getSavedPrograms();
+  const names = Object.keys(programs).sort((a, b) => a.localeCompare(b));
+
+  if (names.length === 0) {
+    list.innerHTML = '<div class="saved-empty">No saved programs yet.</div>';
+    return;
+  }
+
+  list.innerHTML = names.map(name => {
+    const len = programs[name].length;
+    return `<div class="saved-item">` +
+      `<span class="name" data-name="${name}" title="Click to load">${name}</span>` +
+      `<span class="size">${len}B</span>` +
+      `<button class="del" data-name="${name}" title="Delete">\u00d7</button>` +
+      `</div>`;
+  }).join('');
+
+  // Load on name click
+  list.querySelectorAll('.name').forEach(el => {
+    el.onclick = () => {
+      const name = el.dataset.name;
+      const programs = getSavedPrograms();
+      const bytes = programs[name];
+      if (!bytes) return;
+      cpu.reset();
+      cpu.clearMemory();
+      cpu.loadProgram(bytes, 0, 0);
+      ttyText = '';
+      updateTTY();
+      $('hexInput').value = bytes.map(b => hex2(b)).join(' ');
+      $('saveName').value = name;
+      setStatus('Loaded "' + name + '"', 'ok');
+      updateUI();
+    };
+  });
+
+  // Delete on x click
+  list.querySelectorAll('.del').forEach(el => {
+    el.onclick = () => {
+      const name = el.dataset.name;
+      if (!confirm('Delete "' + name + '"?')) return;
+      const programs = getSavedPrograms();
+      delete programs[name];
+      setSavedPrograms(programs);
+      renderSavedList();
+      setStatus('Deleted "' + name + '"', 'ok');
+    };
+  });
+}
+
+$('btnSave').onclick = () => {
+  const name = $('saveName').value.trim();
+  if (!name) { setStatus('Enter a name to save', 'error'); return; }
+  const hexText = $('hexInput').value.trim();
+  if (!hexText) { setStatus('No program data to save', 'error'); return; }
+  try {
+    const bytes = parseHex(hexText);
+    const programs = getSavedPrograms();
+    const overwrite = programs.hasOwnProperty(name);
+    programs[name] = bytes;
+    setSavedPrograms(programs);
+    renderSavedList();
+    setStatus((overwrite ? 'Updated' : 'Saved') + ' "' + name + '" (' + bytes.length + ' bytes)', 'ok');
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'error');
+  }
+};
+
+renderSavedList();
+
+// Initial UI
+updateUI();
+</script>
+</body>
+</html>

@@ -4,9 +4,10 @@
     #outp 0
 }
 
+#addr 0x10
 init:
     mov a, 0x20
-    mov ds, 5
+    mov ds, 0x40
     scd nc
 .loop:
     mov [0], a

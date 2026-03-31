@@ -14,8 +14,8 @@
 }
 
 #subruledef segment {
-    cs  => 0`2
-    ds  => 1`2
+    cs  => 0b00
+    ds  => 0b01
 }
 
 #ruledef {
@@ -38,6 +38,7 @@
     
     mov [{addr: u8}], {op1: reg}    => 0x5 @ op1 @ 0b00 @ addr
     mov [{op2: reg}], {op1: reg}    => 0x5 @ op1 @ op2
+    mov [{op2: reg}], {data: u8}    => 0x5 @ 0b00 @ op2 @ data
     
     mov {seg: segment}, {num: u8}   => 0x6 @ 0b00 @ seg @ num
     mov {seg: segment}, {op1: reg}  => 0x6 @ op1 @ seg
@@ -84,5 +85,31 @@
     
     rol {op1}   => asm {
         adc {op1}, {op1}
+    }
+    
+    ; Complex operations
+    bcs {op1} => asm {
+        scd c
+        jif {op1}
+    }
+    bcc {op1} => asm {
+        scd nc
+        jif {op1}
+    }
+    beq {op1} => asm {
+        scd z
+        jif {op1}
+    }
+    bne {op1} => asm {
+        scd nz
+        jif {op1}
+    }
+    bmi {op1} => asm {
+        scd n
+        jif {op1}
+    }
+    bpl {op1} => asm {
+        scd nn
+        jif {op1}
     }
 }

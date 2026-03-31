@@ -4,14 +4,15 @@
     #outp 0
 }
 
+#addr 0x10
 init:
     mov b, message
 print:
-    mov ds, 0
+    mov ds, 0x00
     mov a, [b]
     scd z
     jif .end
-    mov ds, 5
+    mov ds, 0x40
     mov [0], a
     add b, 1
     jmp print

@@ -40,7 +40,7 @@
     mov [{op2: reg}], {op1: reg}    => 0x5 @ op1 @ op2
     
     mov {seg: segment}, {num: u8}   => 0x6 @ 0b00 @ seg @ num
-    mov {seg: segment}, {op1: reg}  => 0x6 @ reg @ seg
+    mov {seg: segment}, {op1: reg}  => 0x6 @ op1 @ seg
     
     add {op1: reg}, {op2: reg}  => 0x7 @ op1 @ op2
     add {op1: reg}, {data: i8}  => 0x7 @ op1 @ 0b00 @ data

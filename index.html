@@ -424,7 +424,10 @@ class LWCPU4 {
   }
 
   fetch() {
-    const val = this.getSegment(this.cs)[this.pc & 0xFF];
+    const addr = this.pc & 0xFF;
+    // First 16 bytes of any code segment always map to segment 0
+    const seg = (addr < 16) ? 0 : this.cs;
+    const val = this.getSegment(seg)[addr];
     this.pc = (this.pc + 1) & 0xFF;
     return val;
   }
@@ -641,10 +644,11 @@ const ALU_NAMES = {
 };
 const SHIFT_NAMES = { 0: 'shr', 1: 'ror', 2: 'asr' };
 
-function disassemble(mem, addr) {
+function disassemble(mem, addr, seg0) {
   let pc = addr & 0xFF;
   const startPC = pc;
-  const rd = () => { const v = mem[pc & 0xFF]; pc = (pc+1) & 0xFF; return v; };
+  const rdMem = (a) => (a < 16 && seg0) ? seg0[a] : mem[a];
+  const rd = () => { const a = pc & 0xFF; pc = (pc+1) & 0xFF; return rdMem(a); };
   const byte0 = rd();
   const hi = (byte0 >> 4) & 0xF;
   const lo = byte0 & 0xF;
@@ -709,7 +713,7 @@ function disassemble(mem, addr) {
 
   const len = ((pc - startPC) + 256) % 256 || 1;
   const bytes = [];
-  for (let i = 0; i < len; i++) bytes.push(mem[(startPC + i) & 0xFF]);
+  for (let i = 0; i < len; i++) bytes.push(rdMem((startPC + i) & 0xFF));
   return { mnemonic, operands, bytes, length: len };
 }
 
@@ -1002,13 +1006,14 @@ function updateUI() {
 function updateDisasm() {
   const el = $('disasmView');
   const mem = cpu.getSegment(cpu.cs);
+  const seg0 = cpu.cs !== 0 ? cpu.getSegment(0) : null;
   const lines = [];
   let addr = 0;
   const seen = new Set();
 
   while (addr < 256 && !seen.has(addr)) {
     seen.add(addr);
-    const info = disassemble(mem, addr);
+    const info = disassemble(mem, addr, seg0);
     const isCurrent = addr === cpu.pc;
     const hexStr = info.bytes.map(b => hex2(b)).join(' ');
 
@@ -1022,11 +1027,12 @@ function updateDisasm() {
 
     addr += info.length;
     // Stop after a run of zeros (likely data/padding)
-    if (info.bytes.every(b => b === 0) && addr < 256 && mem[addr] === 0) {
+    const rdDisasm = (a) => (a < 16 && seg0) ? seg0[a] : mem[a];
+    if (info.bytes.every(b => b === 0) && addr < 256 && rdDisasm(addr) === 0) {
       // Check if rest is all zeros
       let allZero = true;
       for (let i = addr; i < Math.min(addr + 8, 256); i++) {
-        if (mem[i] !== 0) { allZero = false; break; }
+        if (rdDisasm(i) !== 0) { allZero = false; break; }
       }
       if (allZero) break;
     }

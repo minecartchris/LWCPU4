@@ -1,6 +1,6 @@
 #bankdef lc4 {
     #bits 8
-    #addr 0x00
+    #addr 0
     #outp 0
 }
 
@@ -18,10 +18,12 @@ inputString:
     mov b, 0        ; Index
 .loop:
     mov ds, 0x40    ; IO segment
-    scd n           ; Loop while reading negative
 .charLoop:
+    mov a, [3]      
+    bpl init        ; jump if reading not negative
+    and st, 0xfe
     mov a, [2]      ; Load character from serial
-    jif .charLoop   ; Loop on negative
+    bcs .charLoop   ; Loop on negative
     
     scd z           ; Branch if equal
     cmp a, 0x0a     ; CR

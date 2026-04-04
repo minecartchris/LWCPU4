@@ -14,10 +14,11 @@ inputString:
     mov b, 0        ; Index
 .loop:
     mov ds, 0x40    ; IO segment
-    scd n           ; Loop while reading negative
+    scd c           ; Loop while carry set
 .charLoop:
+    and st, 0xfe    ; Clear carry
     mov a, [0]      ; Load character from serial
-    jif .charLoop   ; Loop on negative
+    jif .charLoop   ; Loop on carry set (Empty buffer)
     
     scd z           ; Branch if equal
     cmp a, 0x0a     ; CR

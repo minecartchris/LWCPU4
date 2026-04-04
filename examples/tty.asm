@@ -1,7 +1,7 @@
-; loadram "C:/Users/risto/Documents/Git clones/LWCPU4/bin/output.bin"
+; loadram "/Users/risto/Documents/Git clones/LWCPU4/bin/output.bin"
 #bankdef lc4 {
     #bits 8
-    #addr 0x00
+    #addr 0x10
     #outp 0
 }
 

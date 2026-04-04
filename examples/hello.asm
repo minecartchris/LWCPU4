@@ -13,11 +13,11 @@ print:
     scd z
     jif .end
     mov ds, 0x40
-    mov [0], a
+    mov [0], awdw  w 
     add b, 1
     jmp print
 .end:
-    jmp init
+    jmp $
     
 message:
-    #d "Hello, world!\n\0"
+    #d "I always come back\n\0"

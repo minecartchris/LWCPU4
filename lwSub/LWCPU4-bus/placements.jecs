@@ -1,0 +1,58 @@
+Placements:
+    -
+        CornerMidpointPositionBeforeFlipping:
+            x: 0
+            y: 0
+            z: 0
+        RotationBeforeFlipping:
+            x: 0
+            y: -0.7071067
+            z: 0
+            w: 0.7071068
+        PlacementType: OnTerrain
+        Flipped: false
+        BoardRotationState: 0
+        Type: Standard
+    -
+        CornerMidpointPositionBeforeFlipping:
+            x: 0
+            y: 0
+            z: -35.1
+        RotationBeforeFlipping:
+            x: 0
+            y: -0.7071067
+            z: 0
+            w: 0.7071068
+        PlacementType: OnTerrain
+        Flipped: false
+        BoardRotationState: 0
+        Type: Standard
+    -
+        CornerMidpointPositionBeforeFlipping:
+            x: 0
+            y: 0
+            z: -23.4
+        RotationBeforeFlipping:
+            x: 0
+            y: -0.7071067
+            z: 0
+            w: 0.7071068
+        PlacementType: OnTerrain
+        Flipped: false
+        BoardRotationState: 0
+        Type: Standard
+    -
+        CornerMidpointPositionBeforeFlipping:
+            x: 0
+            y: 0
+            z: -11.7
+        RotationBeforeFlipping:
+            x: 0
+            y: -0.7071067
+            z: 0
+            w: 0.7071068
+        PlacementType: OnTerrain
+        Flipped: false
+        BoardRotationState: 0
+        Type: Standard
+data_format_version: 1

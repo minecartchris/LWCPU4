@@ -1,0 +1,15 @@
+#startscript
+using lwcpu4.zd;
+using zd.devices;
+
+namespace tty;
+
+void Main()
+{
+    int data;
+    setdevice(0x40);
+    while (true)
+    {
+        devout(devin(1));
+    }
+}

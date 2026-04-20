@@ -1,0 +1,33 @@
+PlacingInfos:
+    -
+        Flipped: false
+        RotationAboutUpVector: 180
+        Offset:
+            x: 0
+            y: 0
+        BoardIsFlat: true
+        BoardRotationState: 0
+    -
+        Flipped: false
+        RotationAboutUpVector: 0
+        Offset:
+            x: 37
+            y: 44
+        BoardIsFlat: true
+        BoardRotationState: 0
+    -
+        Flipped: false
+        RotationAboutUpVector: 0
+        Offset:
+            x: 0
+            y: 0
+        BoardIsFlat: true
+        BoardRotationState: 0
+    -
+        Flipped: false
+        RotationAboutUpVector: 0
+        Offset:
+            x: 0
+            y: 0
+        BoardIsFlat: true
+        BoardRotationState: 0

@@ -1,0 +1,9 @@
+PlacingInfos:
+    -
+        Flipped: false
+        RotationAboutUpVector: 360
+        Offset:
+            x: 0
+            y: 0
+        BoardIsFlat: true
+        BoardRotationState: 0

@@ -1,0 +1,16 @@
+Placements:
+    -
+        CornerMidpointPositionBeforeFlipping:
+            x: 0
+            y: 0
+            z: 0
+        RotationBeforeFlipping:
+            x: -0.00000005960465
+            y: 1
+            z: -0.00000005960465
+            w: -0.000000000000003552715
+        PlacementType: OnTerrain
+        Flipped: false
+        BoardRotationState: 1
+        Type: StandingBoard
+data_format_version: 1

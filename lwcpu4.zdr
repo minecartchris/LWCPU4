@@ -1,0 +1,40 @@
+bitw:8
+cname:"lc4"
+entry:0x10
+regnum:2
+regdef:{
+    r1:a
+    r2:b
+    z:ds
+}
+nop:nop
+gpc:spc r1
+jmp:jmp
+bcs:bcs r1
+bnc:bcc r1
+biz:beq r1
+bnz:bne r1
+bin:bmi r1
+bip:bpl r1
+rsh:shr r1
+lsh:shl r1
+rsc:ror r1
+lsc:rol r1
+xor:xor r1 r2
+or:or r1 r2
+and:and r1 r2
+cmp:cmp r1 r2
+swc:sbc r1 r2
+sub:sub r1 r2
+awc:adc r1 r2
+add:add r1 r2
+mov:{
+    mov r2 r1
+    mov a2 r1
+    mov r2 a1
+    mov r2 d1
+}
+dvc:asm{
+    mov "ds" r1
+    scd n
+}

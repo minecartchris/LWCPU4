@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LWCPU4 Emulator</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --surface: #282840;
+    --border: #3e3e5e;
+    --text: #cdd6f4;
+    --dim: #6c7086;
+    --accent: #89b4fa;
+    --green: #a6e3a1;
+    --red: #f38ba8;
+    --yellow: #f9e2af;
+    --peach: #fab387;
+    --pink: #f5c2e7;
+    --mono: 'Consolas', 'Courier New', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 16px;
+  }
+  h1 { font-size: 18px; color: var(--accent); margin-bottom: 12px; }
+  h2 { font-size: 13px; color: var(--accent); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 260px 1fr 320px;
+    grid-template-rows: auto 1fr;
+    gap: 12px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+  }
+
+  .controls { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .controls button {
+    background: var(--border); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 5px 14px; font-family: var(--mono); font-size: 12px;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .controls button:hover { background: var(--accent); color: var(--bg); }
+  .controls button.active { background: var(--green); color: var(--bg); }
+  .controls label { font-size: 11px; color: var(--dim); }
+  .controls input[type=range] { width: 80px; }
+  .controls input[type=number], .controls input[type=text] {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 2px 6px; font-family: var(--mono); font-size: 11px;
+    width: 60px;
+  }
+  .speed-val { font-size: 11px; color: var(--yellow); min-width: 50px; }
+
+  .reg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .reg-item {
+    display: flex; justify-content: space-between;
+    padding: 3px 6px; background: var(--bg); border-radius: 3px; font-size: 12px;
+  }
+  .reg-name { color: var(--peach); }
+  .reg-val { color: var(--green); }
+  .reg-item.full { grid-column: 1 / -1; }
+
+  .flags { display: flex; gap: 8px; margin-top: 6px; justify-content: center; }
+  .flag {
+    padding: 2px 8px; border-radius: 3px; font-size: 11px;
+    background: var(--bg); color: var(--dim);
+  }
+  .flag.set { color: var(--yellow); font-weight: bold; }
+
+  .disasm { font-size: 11px; max-height: 320px; overflow-y: auto; }
+  .disasm-line {
+    padding: 2px 4px; white-space: pre; border-left: 2px solid transparent;
+  }
+  .disasm-line.current {
+    background: rgba(137, 180, 250, 0.15); border-left-color: var(--accent);
+  }
+  .disasm-addr { color: var(--dim); }
+  .disasm-hex { color: var(--peach); }
+  .disasm-mne { color: var(--green); }
+  .disasm-ops { color: var(--text); }
+
+  .mem-view { font-size: 11px; max-height: 360px; overflow-y: auto; line-height: 1.5; }
+  .mem-addr { color: var(--dim); }
+  .mem-byte { color: var(--text); }
+  .mem-byte.highlight { color: var(--accent); font-weight: bold; }
+  .mem-byte.tty     { color: var(--pink); }
+  .mem-ascii { color: var(--dim); margin-left: 8px; }
+  .mem-controls { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; flex-wrap: wrap; }
+  .mem-controls select, .mem-controls input {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 2px 6px; font-family: var(--mono); font-size: 11px;
+  }
+  .mem-controls button {
+    background: var(--bg); color: var(--accent);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 2px 8px; font-family: var(--mono); font-size: 10px;
+    cursor: pointer;
+  }
+  .mem-controls button:hover { background: var(--border); }
+
+  .tty {
+    background: #000; color: #0f0;
+    font-size: 13px; padding: 8px;
+    min-height: 200px; max-height: 360px;
+    overflow-y: auto; border-radius: 4px;
+    white-space: pre-wrap; word-break: break-all; line-height: 1.4; cursor: text;
+  }
+  .tty-cursor { display: inline; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .load-area textarea {
+    width: 100%; height: 90px;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 6px; font-family: var(--mono); font-size: 11px; resize: vertical;
+  }
+  .load-area .btn-row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .load-area button {
+    background: var(--border); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 10px; font-family: var(--mono); font-size: 11px; cursor: pointer;
+  }
+  .load-area button:hover { background: var(--accent); color: var(--bg); }
+  .load-area input[type=file] { display: none; }
+  .load-area .file-name { font-size: 10px; color: var(--dim); }
+
+  .status { font-size: 11px; color: var(--dim); margin-top: 4px; }
+  .status.error { color: var(--red); }
+  .status.ok    { color: var(--green); }
+
+  .examples { margin-top: 8px; }
+  .examples button {
+    background: var(--bg); color: var(--accent);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 3px 8px; font-size: 10px; font-family: var(--mono);
+    cursor: pointer; margin: 2px;
+  }
+  .examples button:hover { background: var(--border); }
+
+  .saved-programs { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+  .saved-programs h3 {
+    font-size: 11px; color: var(--accent); margin-bottom: 6px;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .save-row { display: flex; gap: 4px; margin-bottom: 6px; }
+  .save-row input {
+    flex: 1; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 3px 6px; font-family: var(--mono); font-size: 11px;
+  }
+  .save-row button {
+    background: var(--green); color: var(--bg);
+    border: none; border-radius: 3px;
+    padding: 3px 10px; font-family: var(--mono); font-size: 11px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .save-row button:hover { opacity: 0.85; }
+  .saved-list { max-height: 120px; overflow-y: auto; }
+  .saved-item {
+    display: flex; align-items: center; gap: 4px;
+    padding: 3px 4px; border-radius: 3px; font-size: 11px;
+  }
+  .saved-item:hover { background: var(--bg); }
+  .saved-item .name {
+    flex: 1; cursor: pointer; color: var(--accent);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .saved-item .name:hover { text-decoration: underline; }
+  .saved-item .size { color: var(--dim); font-size: 10px; margin-right: 4px; }
+  .saved-item .del {
+    background: none; border: none; color: var(--red); cursor: pointer;
+    font-family: var(--mono); font-size: 12px; padding: 0 4px; opacity: 0.6;
+  }
+  .saved-item .del:hover { opacity: 1; }
+  .saved-empty { font-size: 10px; color: var(--dim); font-style: italic; }
+</style>
+</head>
+<body>
+
+<h1>LWCPU4 Emulator</h1>
+
+<div class="layout">
+  <!-- Controls -->
+  <div class="controls panel">
+    <button id="btnStep" title="Execute one instruction">Step</button>
+    <button id="btnRun" title="Run continuously">Run</button>
+    <button id="btnPause" title="Pause execution">Pause</button>
+    <button id="btnReset" title="Reset CPU (preserves memory)">Reset</button>
+    <button id="btnClear" title="Clear memory and reset">Clear</button>
+    <label>Speed:</label>
+    <input type="range" id="speedSlider" min="0" max="6" value="3">
+    <span class="speed-val" id="speedLabel">100 Hz</span>
+    <label>TTY seg:</label>
+    <input type="text" id="ttySegInput" value="0x40" title="TTY segment (default 0x40)">
+    <span style="margin-left:auto; font-size:11px; color:var(--dim)">
+      Cycles: <span id="cycleCount" style="color:var(--yellow)">0</span>
+    </span>
+  </div>
+
+  <!-- Left column: Registers + Disassembly -->
+  <div>
+    <div class="panel" style="margin-bottom:12px">
+      <h2>Registers</h2>
+      <div class="reg-grid">
+        <div class="reg-item"><span class="reg-name">A</span><span class="reg-val" id="regA">00</span></div>
+        <div class="reg-item"><span class="reg-name">B</span><span class="reg-val" id="regB">00</span></div>
+        <div class="reg-item"><span class="reg-name">ST</span><span class="reg-val" id="regST">00</span></div>
+        <div class="reg-item"><span class="reg-name">PC</span><span class="reg-val" id="regPC">00</span></div>
+        <div class="reg-item"><span class="reg-name">CS</span><span class="reg-val" id="regCS">00</span></div>
+        <div class="reg-item"><span class="reg-name">DS</span><span class="reg-val" id="regDS">00</span></div>
+        <div class="reg-item full"><span class="reg-name">Cond</span><span class="reg-val" id="regCond">--</span></div>
+      </div>
+      <div class="flags">
+        <span class="flag" id="flagC">C</span>
+        <span class="flag" id="flagZ">Z</span>
+        <span class="flag" id="flagN">N</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Disassembly (cs)</h2>
+      <div class="disasm" id="disasmView"></div>
+    </div>
+  </div>
+
+  <!-- Center: Memory + Load -->
+  <div>
+    <div class="panel" style="margin-bottom:12px">
+      <h2>Memory</h2>
+      <div class="mem-controls">
+        <label style="font-size:11px;color:var(--dim)">Segment:</label>
+        <input type="text" id="memSeg" value="0x00" style="width:50px">
+        <button id="btnMemCS">CS</button>
+        <button id="btnMemDS">DS</button>
+        <button id="btnMemTTY">TTY</button>
+      </div>
+      <div class="mem-view" id="memView"></div>
+    </div>
+
+    <div class="panel load-area">
+      <h2>Load Program</h2>
+      <textarea id="hexInput" placeholder="Paste hex bytes (e.g., 38 12 61 00 46 22 11 10 ...)&#10;Or drag a .bin file onto this box."></textarea>
+      <div class="btn-row">
+        <button id="btnLoadHex">Load Hex</button>
+        <button id="btnLoadFile" title="Load binary file">Load File</button>
+        <span class="file-name" id="fileName"></span>
+        <input type="file" id="fileInput" accept=".bin,.rom,.o,.out">
+      </div>
+      <div class="btn-row">
+        <label style="font-size:11px;color:var(--dim)">Load @</label>
+        <input type="text" id="loadAddr" value="0x00" style="width:50px">
+        <label style="font-size:11px;color:var(--dim)">in seg</label>
+        <input type="text" id="loadSeg" value="0x00" style="width:50px">
+      </div>
+      <div class="status" id="loadStatus"></div>
+      <div class="examples">
+        <span style="font-size:10px;color:var(--dim)">Examples:</span>
+        <button id="exHello">Hello World</button>
+        <button id="exCounter">ASCII Counter</button>
+        <button id="exTTY">TTY Echo</button>
+        <button id="exBoot">Bootloader</button>
+      </div>
+      <div class="saved-programs">
+        <h3>Saved Programs</h3>
+        <div class="save-row">
+          <input type="text" id="saveName" placeholder="Program name...">
+          <button id="btnSave">Save</button>
+        </div>
+        <div class="saved-list" id="savedList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right column: TTY -->
+  <div class="panel">
+    <h2>TTY Terminal <span id="ttyLabel" style="font-size:10px;color:var(--dim)">(segment 0x40, addr 0)</span></h2>
+    <div class="tty" id="ttyOutput" tabindex="0"><span class="tty-cursor">&#x2588;</span></div>
+    <div style="margin-top:6px;font-size:10px;color:var(--dim)">
+      Click terminal and type to send input. Reading from an empty buffer sets the Carry flag.
+    </div>
+    <button id="btnClearTTY" style="margin-top:6px;background:var(--bg);color:var(--dim);border:1px solid var(--border);border-radius:3px;padding:2px 8px;font-size:10px;cursor:pointer;font-family:var(--mono)">Clear Terminal</button>
+  </div>
+</div>
+
+<script src="cpu.js"></script>
+<script>
+(function () {
+  const { LWCPU4, disassemble, hex2, COND_NAMES } = window.LWCPU4Module;
+
+  // ─── State ─────────────────────────────────────────────────────────
+  const cpu = new LWCPU4({ ttySegment: 0x40 });
+  let running = false;
+  let runTimer = null;
+  const SPEEDS       = [1, 5, 20, 100, 500, 2000, 1000000];
+  const SPEED_LABELS = ['1 Hz', '5 Hz', '20 Hz', '100 Hz', '500 Hz', '2 kHz', 'Max'];
+
+  const $ = id => document.getElementById(id);
+  const parseNum = s => {
+    s = (s || '').toString().trim();
+    if (!s) return 0;
+    if (s.startsWith('0x') || s.startsWith('0X')) return parseInt(s.slice(2), 16) | 0;
+    if (s.startsWith('0b') || s.startsWith('0B')) return parseInt(s.slice(2), 2) | 0;
+    return parseInt(s, 10) | 0;
+  };
+
+  // ─── TTY ───────────────────────────────────────────────────────────
+  const ttyEl = $('ttyOutput');
+  let ttyText = '';
+
+  cpu.ttyOutputCallback = (charCode) => {
+    if (charCode === 10) ttyText += '\n';
+    else if (charCode >= 32 && charCode < 127) ttyText += String.fromCharCode(charCode);
+    else if (charCode === 8 && ttyText.length > 0) ttyText = ttyText.slice(0, -1);
+    else if (charCode === 13) { /* CR: ignore */ }
+    else if (charCode === 9) ttyText += '\t';
+    else ttyText += '·';
+    updateTTY();
+  };
+
+  function updateTTY() {
+    ttyEl.textContent = ttyText;
+    const cursor = document.createElement('span');
+    cursor.className = 'tty-cursor';
+    cursor.textContent = '█';
+    ttyEl.appendChild(cursor);
+    ttyEl.scrollTop = ttyEl.scrollHeight;
+  }
+
+  ttyEl.addEventListener('keydown', (e) => {
+    if (e.key.length === 1) {
+      cpu.ttyInputBuffer.push(e.key.charCodeAt(0));
+    } else if (e.key === 'Enter') {
+      cpu.ttyInputBuffer.push(10);
+    } else if (e.key === 'Backspace') {
+      cpu.ttyInputBuffer.push(8);
+    } else if (e.key === 'Tab') {
+      cpu.ttyInputBuffer.push(9);
+    } else {
+      return;
+    }
+    e.preventDefault();
+  });
+
+  $('btnClearTTY').onclick = () => { ttyText = ''; updateTTY(); };
+
+  // ─── Controls ──────────────────────────────────────────────────────
+  $('btnStep').onclick = () => { stopRun(); cpu.step(); updateUI(); };
+
+  $('btnRun').onclick = () => {
+    if (running) return;
+    running = true;
+    $('btnRun').classList.add('active');
+    scheduleRun();
+  };
+
+  $('btnPause').onclick = stopRun;
+
+  $('btnReset').onclick = () => {
+    stopRun();
+    cpu.reset();
+    ttyText = '';
+    updateTTY();
+    updateUI();
+  };
+
+  $('btnClear').onclick = () => {
+    stopRun();
+    cpu.reset();
+    cpu.clearMemory();
+    ttyText = '';
+    updateTTY();
+    updateUI();
+    setStatus('Memory cleared', 'ok');
+  };
+
+  function stopRun() {
+    running = false;
+    $('btnRun').classList.remove('active');
+    if (runTimer) { cancelAnimationFrame(runTimer); runTimer = null; }
+    updateUI();
+  }
+
+  function scheduleRun() {
+    if (!running) return;
+    const speed = SPEEDS[$('speedSlider').value];
+    if (speed >= 1000000) {
+      runTimer = requestAnimationFrame(() => {
+        for (let i = 0; i < 10000 && !cpu.halted; i++) cpu.step();
+        updateUI();
+        if (cpu.halted) { stopRun(); return; }
+        scheduleRun();
+      });
+    } else {
+      const perFrame = Math.max(1, Math.ceil(speed / 60));
+      runTimer = requestAnimationFrame(() => {
+        for (let i = 0; i < perFrame && !cpu.halted; i++) cpu.step();
+        updateUI();
+        if (cpu.halted) { stopRun(); return; }
+        if (speed <= 5) setTimeout(() => scheduleRun(), 1000 / speed);
+        else scheduleRun();
+      });
+    }
+  }
+
+  $('speedSlider').oninput = () => {
+    $('speedLabel').textContent = SPEED_LABELS[$('speedSlider').value];
+  };
+
+  $('ttySegInput').onchange = () => {
+    const v = parseNum($('ttySegInput').value) & 0xFF;
+    cpu.ttySegment = v;
+    $('ttyLabel').textContent = '(segment 0x' + hex2(v) + ', addr 0)';
+    updateMemView();
+  };
+
+  // ─── Memory view ───────────────────────────────────────────────────
+  $('btnMemCS').onclick  = () => { $('memSeg').value = '0x' + hex2(cpu.cs); updateMemView(); };
+  $('btnMemDS').onclick  = () => { $('memSeg').value = '0x' + hex2(cpu.ds); updateMemView(); };
+  $('btnMemTTY').onclick = () => { $('memSeg').value = '0x' + hex2(cpu.ttySegment); updateMemView(); };
+  $('memSeg').onchange   = updateMemView;
+
+  // ─── Load program ──────────────────────────────────────────────────
+  function loadBytes(bytes, source) {
+    const addr = parseNum($('loadAddr').value) & 0xFF;
+    const seg  = parseNum($('loadSeg').value) & 0xFF;
+    cpu.reset();
+    cpu.loadProgram(bytes, seg, addr);
+    cpu.cs = seg;
+    cpu.pc = addr;
+    ttyText = '';
+    updateTTY();
+    updateUI();
+    setStatus('Loaded ' + bytes.length + ' bytes from ' + source +
+              ' @ 0x' + hex2(addr) + ' in seg 0x' + hex2(seg), 'ok');
+  }
+
+  $('btnLoadHex').onclick = () => {
+    const text = $('hexInput').value.trim();
+    if (!text) return;
+    try {
+      const bytes = parseHex(text);
+      loadBytes(bytes, 'hex');
+    } catch (e) {
+      setStatus('Error: ' + e.message, 'error');
+    }
+  };
+
+  $('btnLoadFile').onclick = () => $('fileInput').click();
+  $('fileInput').onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const bytes = new Uint8Array(reader.result);
+      $('fileName').textContent = file.name;
+      $('hexInput').value = Array.from(bytes).map(hex2).join(' ');
+      loadBytes(bytes, file.name);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  function parseHex(text) {
+    text = text.replace(/\/\/.*$/gm, '').replace(/[;#].*$/gm, '');
+    const matches = text.match(/[0-9a-fA-F]{2}/g);
+    if (!matches || matches.length === 0) throw new Error('No hex bytes found');
+    return matches.map(h => parseInt(h, 16));
+  }
+
+  function setStatus(msg, cls) {
+    const el = $('loadStatus');
+    el.textContent = msg;
+    el.className = 'status ' + (cls || '');
+  }
+
+  // ─── Examples ──────────────────────────────────────────────────────
+  // These use the real LWCPU4 TTY convention: segment 0x40, addr 0.
+  // Empty-TTY-read sets the Carry flag.
+  const EXAMPLES = {
+    hello: {
+      name: 'Hello World',
+      addr: 0x00, seg: 0x00,
+      // 00: mov b, 0x12        38 12
+      // 02: mov ds, 0x00       61 00     <- print:
+      // 04: mov a, [b]         46
+      // 05: scd z              22
+      // 06: jif $10            11 10
+      // 08: mov ds, 0x40       61 40
+      // 0A: mov [0], a         54 00
+      // 0C: add b, 1           78 01
+      // 0E: jmp $02            10 02
+      // 10: jmp $00            10 00     <- .end (loop)
+      // 12: "Hello, world!\n\0"
+      bytes: [
+        0x38, 0x12, 0x61, 0x00, 0x46, 0x22, 0x11, 0x10,
+        0x61, 0x40, 0x54, 0x00, 0x78, 0x01, 0x10, 0x02,
+        0x10, 0x00,
+        0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20,
+        0x77, 0x6F, 0x72, 0x6C, 0x64, 0x21, 0x0A, 0x00
+      ]
+    },
+    counter: {
+      name: 'ASCII Counter',
+      addr: 0x00, seg: 0x00,
+      // 00: mov a, 0x20        34 20
+      // 02: mov ds, 0x40       61 40
+      // 04: scd nc             29
+      // 05: mov [0], a         54 00     <- .loop
+      // 07: add a, 1           74 01
+      // 09: cmp a, 0x7F        b4 7f
+      // 0B: jif $05            11 05
+      // 0D: jmp $00            10 00
+      bytes: [
+        0x34, 0x20, 0x61, 0x40, 0x29,
+        0x54, 0x00, 0x74, 0x01, 0xB4, 0x7F, 0x11, 0x05,
+        0x10, 0x00
+      ]
+    },
+    tty: {
+      name: 'TTY Echo',
+      addr: 0x00, seg: 0x00,
+      // 00: mov ds, 0x40       61 40
+      // 02: scd c              21         <- carry-based polling
+      // 03: mov a, [0]         44 00      <- .loop
+      // 05: jif $03            11 03
+      // 07: mov [0], a         54 00
+      // 09: jmp $03            10 03
+      bytes: [
+        0x61, 0x40, 0x21, 0x44, 0x00, 0x11, 0x03, 0x54, 0x00, 0x10, 0x03
+      ]
+    },
+    boot: {
+      name: 'Bootloader',
+      addr: 0x00, seg: 0x00,
+      // 00: mov cs, 0          60 00
+      // 02: mov ds, 0          61 00
+      // 04: jmp 0x10           10 10
+      // 06: mov cs, b          68
+      // 07: jmp a              14
+      bytes: [0x60, 0x00, 0x61, 0x00, 0x10, 0x10, 0x68, 0x14]
+    }
+  };
+
+  $('exHello').onclick   = () => loadExample('hello');
+  $('exCounter').onclick = () => loadExample('counter');
+  $('exTTY').onclick     = () => loadExample('tty');
+  $('exBoot').onclick    = () => loadExample('boot');
+
+  function loadExample(name) {
+    const ex = EXAMPLES[name];
+    $('loadAddr').value = '0x' + hex2(ex.addr);
+    $('loadSeg').value  = '0x' + hex2(ex.seg);
+    $('hexInput').value = ex.bytes.map(hex2).join(' ');
+    loadBytes(ex.bytes, 'example: ' + ex.name);
+  }
+
+  // ─── UI update ─────────────────────────────────────────────────────
+  function updateUI() {
+    $('regA').textContent  = hex2(cpu.a);
+    $('regB').textContent  = hex2(cpu.b);
+    $('regST').textContent = hex2(cpu.st);
+    $('regPC').textContent = hex2(cpu.pc);
+    $('regCS').textContent = hex2(cpu.cs);
+    $('regDS').textContent = hex2(cpu.ds);
+
+    const condName = COND_NAMES[cpu.condition];
+    $('regCond').textContent = condName || (cpu.condition === 0 ? '--' : '0x' + cpu.condition.toString(16));
+
+    $('flagC').className = 'flag' + ((cpu.st & 1) ? ' set' : '');
+    $('flagZ').className = 'flag' + ((cpu.st & 2) ? ' set' : '');
+    $('flagN').className = 'flag' + ((cpu.st & 4) ? ' set' : '');
+
+    $('cycleCount').textContent = cpu.cycles.toLocaleString();
+    updateDisasm();
+    updateMemView();
+  }
+
+  function updateDisasm() {
+    const el = $('disasmView');
+    const segCS = cpu.getSegment(cpu.cs);
+    const seg0  = cpu.getSegment(0);
+    const readByte = (a) => (a < 0x10) ? seg0[a] : segCS[a];
+
+    const lines = [];
+    let addr = 0;
+    const seen = new Set();
+
+    while (addr < 256 && !seen.has(addr)) {
+      seen.add(addr);
+      const info = disassemble(readByte, addr);
+      const isCurrent = addr === cpu.pc;
+      const hexStr = info.bytes.map(hex2).join(' ');
+      lines.push(
+        `<div class="disasm-line${isCurrent ? ' current' : ''}">` +
+        `<span class="disasm-addr">${hex2(addr)}: </span>` +
+        `<span class="disasm-hex">${hexStr.padEnd(11)}</span> ` +
+        `<span class="disasm-mne">${info.mnemonic.padEnd(4)}</span> ` +
+        `<span class="disasm-ops">${info.operands}</span></div>`
+      );
+      addr += info.length;
+      // Stop after a long run of zero bytes (likely data/padding).
+      if (info.bytes.every(b => b === 0) && addr < 256) {
+        let allZero = true;
+        for (let i = addr; i < Math.min(addr + 8, 256); i++) {
+          if (readByte(i) !== 0) { allZero = false; break; }
+        }
+        if (allZero) break;
+      }
+    }
+
+    el.innerHTML = lines.join('');
+    const currentLine = el.querySelector('.current');
+    if (currentLine) currentLine.scrollIntoView({ block: 'nearest' });
+  }
+
+  function updateMemView() {
+    const seg = parseNum($('memSeg').value) & 0xFF;
+    const mem = cpu.getSegment(seg);
+    const el = $('memView');
+    let html = '';
+
+    for (let row = 0; row < 256; row += 16) {
+      let hexPart = '';
+      let asciiPart = '';
+      for (let col = 0; col < 16; col++) {
+        const addr = row + col;
+        const val = mem[addr];
+        const isPC  = (seg === cpu.cs && addr === cpu.pc);
+        const isTTY = (seg === cpu.ttySegment && addr === 0);
+        const cls = isPC ? ' highlight' : (isTTY ? ' tty' : '');
+        hexPart += `<span class="mem-byte${cls}">${hex2(val)}</span> `;
+        asciiPart += (val >= 32 && val < 127) ? String.fromCharCode(val) : '.';
+      }
+      html += `<div><span class="mem-addr">${hex2(row)}:</span> ${hexPart}<span class="mem-ascii">${asciiPart}</span></div>`;
+    }
+    el.innerHTML = html;
+  }
+
+  // ─── Drag-and-drop binary onto hex textarea ────────────────────────
+  const hexArea = $('hexInput');
+  hexArea.addEventListener('dragover', e => { e.preventDefault(); });
+  hexArea.addEventListener('drop', e => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const bytes = new Uint8Array(reader.result);
+      $('fileName').textContent = file.name;
+      hexArea.value = Array.from(bytes).map(hex2).join(' ');
+      loadBytes(bytes, file.name);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  // ─── Saved programs (localStorage) ─────────────────────────────────
+  const STORAGE_KEY = 'lwcpu4_saved_programs_v2';
+
+  function getSaved() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+    catch { return {}; }
+  }
+  function setSaved(programs) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(programs));
+  }
+
+  function renderSavedList() {
+    const list = $('savedList');
+    const programs = getSaved();
+    const names = Object.keys(programs).sort((a, b) => a.localeCompare(b));
+    if (names.length === 0) {
+      list.innerHTML = '<div class="saved-empty">No saved programs yet.</div>';
+      return;
+    }
+    list.innerHTML = names.map(name => {
+      const data = programs[name];
+      const len = (data.bytes || data).length;
+      return `<div class="saved-item">` +
+        `<span class="name" data-name="${name}" title="Click to load">${name}</span>` +
+        `<span class="size">${len}B</span>` +
+        `<button class="del" data-name="${name}" title="Delete">×</button>` +
+        `</div>`;
+    }).join('');
+
+    list.querySelectorAll('.name').forEach(el => {
+      el.onclick = () => {
+        const name = el.dataset.name;
+        const data = getSaved()[name];
+        if (!data) return;
+        const bytes = data.bytes || data;
+        const addr = (data.addr != null) ? data.addr : 0;
+        const seg  = (data.seg  != null) ? data.seg  : 0;
+        $('loadAddr').value = '0x' + hex2(addr);
+        $('loadSeg').value  = '0x' + hex2(seg);
+        $('hexInput').value = bytes.map(hex2).join(' ');
+        $('saveName').value = name;
+        loadBytes(bytes, '"' + name + '"');
+      };
+    });
+    list.querySelectorAll('.del').forEach(el => {
+      el.onclick = () => {
+        const name = el.dataset.name;
+        if (!confirm('Delete "' + name + '"?')) return;
+        const programs = getSaved();
+        delete programs[name];
+        setSaved(programs);
+        renderSavedList();
+        setStatus('Deleted "' + name + '"', 'ok');
+      };
+    });
+  }
+
+  $('btnSave').onclick = () => {
+    const name = $('saveName').value.trim();
+    if (!name) { setStatus('Enter a name to save', 'error'); return; }
+    const hexText = $('hexInput').value.trim();
+    if (!hexText) { setStatus('No program data to save', 'error'); return; }
+    try {
+      const bytes = parseHex(hexText);
+      const programs = getSaved();
+      const overwrite = programs.hasOwnProperty(name);
+      programs[name] = {
+        bytes,
+        addr: parseNum($('loadAddr').value) & 0xFF,
+        seg:  parseNum($('loadSeg').value)  & 0xFF
+      };
+      setSaved(programs);
+      renderSavedList();
+      setStatus((overwrite ? 'Updated' : 'Saved') + ' "' + name + '" (' + bytes.length + ' bytes)', 'ok');
+    } catch (e) {
+      setStatus('Error: ' + e.message, 'error');
+    }
+  };
+
+  renderSavedList();
+  updateUI();
+})();
+</script>
+</body>
+</html>

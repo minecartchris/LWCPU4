@@ -253,12 +253,12 @@
 
     <div class="panel load-area">
       <h2>Load Program</h2>
-      <textarea id="hexInput" placeholder="Paste hex bytes (e.g., 38 12 61 00 46 22 11 10 ...)&#10;Or drag a .bin file onto this box."></textarea>
+      <textarea id="hexInput" placeholder="Paste hex bytes (38 12 61 00 ...) OR LWCPU4 assembly:&#10;    mov b, msg&#10;loop: mov a, [b]&#10;          ...&#10;Auto-detected. Drag a .bin or .asm file here too."></textarea>
       <div class="btn-row">
-        <button id="btnLoadHex">Load Hex</button>
-        <button id="btnLoadFile" title="Load binary file">Load File</button>
+        <button id="btnLoadHex" title="Auto-detect: assemble if it looks like ASM, else parse as hex">Load</button>
+        <button id="btnLoadFile" title="Load binary or .asm file">Load File</button>
         <span class="file-name" id="fileName"></span>
-        <input type="file" id="fileInput" accept=".bin,.rom,.o,.out">
+        <input type="file" id="fileInput" accept=".bin,.rom,.o,.out,.asm,.s,.txt">
       </div>
       <div class="btn-row">
         <label style="font-size:11px;color:var(--dim)">Load @</label>
@@ -297,6 +297,7 @@
 </div>
 
 <script src="cpu.js"></script>
+<script src="assembler.js"></script>
 <script>
 (function () {
   const { LWCPU4, disassemble, hex2, COND_NAMES, RAM_PAGE_MASK, RAM_SIZE } = window.LWCPU4Module;
@@ -449,8 +450,24 @@
   }
 
   $('btnLoadHex').onclick = () => {
-    const text = $('hexInput').value.trim();
-    if (!text) return;
+    const text = $('hexInput').value;
+    if (!text.trim()) return;
+    const asm = window.LWCPU4Assembler;
+    if (asm && asm.looksLikeAsm(text)) {
+      const startAddr = parseNum($('loadAddr').value) & 0xFF;
+      const r = asm.assemble(text, { startAddr });
+      if (!r.ok) {
+        const first = r.errors[0];
+        setStatus('Assemble error (line ' + first.lineno + '): ' + first.msg, 'error');
+        return;
+      }
+      // If #addr changed the base, reflect it back into the loadAddr field.
+      if (r.baseAddr !== startAddr) {
+        $('loadAddr').value = '0x' + hex2(r.baseAddr);
+      }
+      loadBytes(r.bytes, 'asm (' + r.bytes.length + 'B)');
+      return;
+    }
     try {
       const bytes = parseHex(text);
       loadBytes(bytes, 'hex');
@@ -463,15 +480,45 @@
   $('fileInput').onchange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const bytes = new Uint8Array(reader.result);
-      $('fileName').textContent = file.name;
-      $('hexInput').value = Array.from(bytes).map(hex2).join(' ');
-      loadBytes(bytes, file.name);
-    };
-    reader.readAsArrayBuffer(file);
+    loadDroppedFile(file);
   };
+
+  function isTextFileName(name) {
+    return /\.(asm|s|txt)$/i.test(name || '');
+  }
+
+  function loadDroppedFile(file) {
+    const reader = new FileReader();
+    if (isTextFileName(file.name)) {
+      reader.onload = () => {
+        $('fileName').textContent = file.name;
+        $('hexInput').value = reader.result;
+        const asm = window.LWCPU4Assembler;
+        if (asm) {
+          const startAddr = parseNum($('loadAddr').value) & 0xFF;
+          const r = asm.assemble(reader.result, { startAddr });
+          if (!r.ok) {
+            const first = r.errors[0];
+            setStatus('Assemble error (line ' + first.lineno + '): ' + first.msg, 'error');
+            return;
+          }
+          if (r.baseAddr !== startAddr) {
+            $('loadAddr').value = '0x' + hex2(r.baseAddr);
+          }
+          loadBytes(r.bytes, file.name + ' (asm)');
+        }
+      };
+      reader.readAsText(file);
+    } else {
+      reader.onload = () => {
+        const bytes = new Uint8Array(reader.result);
+        $('fileName').textContent = file.name;
+        $('hexInput').value = Array.from(bytes).map(hex2).join(' ');
+        loadBytes(bytes, file.name);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  }
 
   function parseHex(text) {
     text = text.replace(/\/\/.*$/gm, '').replace(/[;#].*$/gm, '');
@@ -667,14 +714,7 @@
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const bytes = new Uint8Array(reader.result);
-      $('fileName').textContent = file.name;
-      hexArea.value = Array.from(bytes).map(hex2).join(' ');
-      loadBytes(bytes, file.name);
-    };
-    reader.readAsArrayBuffer(file);
+    loadDroppedFile(file);
   });
 
   // ─── Saved programs (localStorage) ─────────────────────────────────
@@ -737,10 +777,22 @@
   $('btnSave').onclick = () => {
     const name = $('saveName').value.trim();
     if (!name) { setStatus('Enter a name to save', 'error'); return; }
-    const hexText = $('hexInput').value.trim();
-    if (!hexText) { setStatus('No program data to save', 'error'); return; }
+    const text = $('hexInput').value.trim();
+    if (!text) { setStatus('No program data to save', 'error'); return; }
     try {
-      const bytes = parseHex(hexText);
+      let bytes;
+      const asm = window.LWCPU4Assembler;
+      if (asm && asm.looksLikeAsm(text)) {
+        const r = asm.assemble(text, { startAddr: parseNum($('loadAddr').value) & 0xFF });
+        if (!r.ok) {
+          const first = r.errors[0];
+          setStatus('Assemble error (line ' + first.lineno + '): ' + first.msg, 'error');
+          return;
+        }
+        bytes = r.bytes;
+      } else {
+        bytes = parseHex(text);
+      }
       const programs = getSaved();
       const overwrite = programs.hasOwnProperty(name);
       programs[name] = {

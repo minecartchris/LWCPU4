@@ -240,7 +240,7 @@
   <!-- Center: Memory + Load -->
   <div>
     <div class="panel" style="margin-bottom:12px">
-      <h2>Memory</h2>
+      <h2>Memory <span id="memAliasNote" style="font-size:10px;color:var(--dim);font-weight:normal;text-transform:none;letter-spacing:0"></span></h2>
       <div class="mem-controls">
         <label style="font-size:11px;color:var(--dim)">Segment:</label>
         <input type="text" id="memSeg" value="0x00" style="width:50px">
@@ -299,7 +299,7 @@
 <script src="cpu.js"></script>
 <script>
 (function () {
-  const { LWCPU4, disassemble, hex2, COND_NAMES } = window.LWCPU4Module;
+  const { LWCPU4, disassemble, hex2, COND_NAMES, RAM_PAGE_MASK, RAM_SIZE } = window.LWCPU4Module;
 
   // ─── State ─────────────────────────────────────────────────────────
   const cpu = new LWCPU4({ ttySegment: 0x40 });
@@ -628,10 +628,21 @@
 
   function updateMemView() {
     const seg = parseNum($('memSeg').value) & 0xFF;
+    const page = seg & RAM_PAGE_MASK;
     const mem = cpu.getSegment(seg);
     const el = $('memView');
-    let html = '';
 
+    const note = $('memAliasNote');
+    if (page !== seg) {
+      note.textContent = '— seg 0x' + hex2(seg) + ' aliases to RAM page 0x' + hex2(page)
+                      + ' (14-bit RAM, 8-bit addr + 6 bits of DS)';
+    } else if (seg === cpu.ttySegment) {
+      note.textContent = '— page 0x' + hex2(page) + ' (TTY at addr 0; rest is RAM)';
+    } else {
+      note.textContent = '— RAM page 0x' + hex2(page);
+    }
+
+    let html = '';
     for (let row = 0; row < 256; row += 16) {
       let hexPart = '';
       let asciiPart = '';

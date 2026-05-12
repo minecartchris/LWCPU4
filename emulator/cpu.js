@@ -16,14 +16,30 @@
   const FLAG_Z = 0x02;
   const FLAG_N = 0x04;
 
+  // The CPU has a single 16 KB RAM addressed by a 14-bit address:
+  //   bits  [7:0]  = the byte-within-page address (from the instruction)
+  //   bits [13:8]  = the page number, taken from the low 6 bits of CS or DS
+  // Bits 6 and 7 of CS/DS are ignored, so every segment value aliases into
+  // this RAM (e.g. DS 0x00, 0x40, 0x80, 0xC0 all see the same page). The
+  // TTY at (ttySegment, 0) is the only memory access that bypasses the RAM.
+  const RAM_PAGE_BITS = 6;
+  const RAM_PAGES     = 1 << RAM_PAGE_BITS;   // 64
+  const RAM_PAGE_MASK = RAM_PAGES - 1;        // 0x3F
+  const RAM_SIZE      = RAM_PAGES * 256;      // 16384
+
   class LWCPU4 {
     constructor(options) {
       options = options || {};
       this.ttySegment = (options.ttySegment != null) ? (options.ttySegment & 0xFF) : DEFAULT_TTY_SEGMENT;
-      this.memory = {};               // segment number -> Uint8Array(256)
+      this.ram = new Uint8Array(RAM_SIZE);
       this.ttyInputBuffer = [];       // bytes pending for TTY read
       this.ttyOutputCallback = null;  // function(byte) called on TTY write
       this.reset();
+    }
+
+    // The 14-bit RAM index for a given (segment, addr) pair.
+    ramIndex(seg, addr) {
+      return ((seg & RAM_PAGE_MASK) << 8) | (addr & 0xFF);
     }
 
     reset() {
@@ -38,23 +54,24 @@
       this.cycles = 0;
     }
 
+    // Returns a 256-byte view of the page that `seg` resolves to. Mutating the
+    // returned Uint8Array writes through to the underlying 16 KB RAM.
     getSegment(seg) {
-      seg &= 0xFF;
-      if (!this.memory[seg]) this.memory[seg] = new Uint8Array(256);
-      return this.memory[seg];
+      const off = (seg & RAM_PAGE_MASK) << 8;
+      return this.ram.subarray(off, off + 256);
     }
 
     clearMemory() {
-      this.memory = {};
+      this.ram.fill(0);
     }
 
     // Direct memory access (no side effects, no flag changes).
     peek(seg, addr) {
-      return this.getSegment(seg)[addr & 0xFF];
+      return this.ram[this.ramIndex(seg, addr)];
     }
 
     poke(seg, addr, val) {
-      this.getSegment(seg)[addr & 0xFF] = val & 0xFF;
+      this.ram[this.ramIndex(seg, addr)] = val & 0xFF;
     }
 
     // Memory access used by the CPU.
@@ -71,7 +88,7 @@
         this.st |= FLAG_C;
         return 0;
       }
-      return this.getSegment(seg)[addr];
+      return this.ram[this.ramIndex(seg, addr)];
     }
 
     writeMem(seg, addr, val) {
@@ -82,24 +99,18 @@
         if (this.ttyOutputCallback) this.ttyOutputCallback(val);
         return;
       }
-      this.getSegment(seg)[addr] = val;
+      this.ram[this.ramIndex(seg, addr)] = val;
     }
 
     // Load `data` into `segment` starting at `offset`. If the data overflows
-    // 256 bytes, the rest wraps into segment+1, +2, …
+    // 256 bytes, the rest wraps into segment+1, +2, …, wrapping the 14-bit
+    // RAM index at 0x4000.
     loadProgram(data, segment, offset) {
-      segment = (segment || 0) & 0xFF;
       offset = (offset || 0) & 0xFF;
-      let seg = this.getSegment(segment);
-      let pos = offset;
+      let idx = this.ramIndex(segment || 0, offset);
       for (let i = 0; i < data.length; i++) {
-        seg[pos] = data[i] & 0xFF;
-        pos++;
-        if (pos === 256) {
-          pos = 0;
-          segment = (segment + 1) & 0xFF;
-          seg = this.getSegment(segment);
-        }
+        this.ram[idx % RAM_SIZE] = data[i] & 0xFF;
+        idx++;
       }
     }
 
@@ -415,6 +426,7 @@
     hex2,
     hex4,
     FLAG_C, FLAG_Z, FLAG_N,
+    RAM_PAGE_BITS, RAM_PAGES, RAM_PAGE_MASK, RAM_SIZE,
     REG_NAMES, COND_NAMES, SEG_NAMES, ALU_NAMES, SHIFT_NAMES
   };
 });
